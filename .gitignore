@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.DS_Store
+*.tmp
+port_info.txt
+rewrite_app.py
+mfg_raw.json
+imp_raw.json
+build_cdsco_excel_db.py
