@@ -535,15 +535,18 @@ if search_btn and (device_name.strip() or applicant_name.strip()):
                 risk_matches = df_risk.copy()
 
             if selected_categories and "device_category" in risk_matches.columns:
-                risk_matches = risk_matches[risk_matches["device_category"].isin(selected_categories)]
+                sel_clean = set(c.strip() for c in selected_categories)
+                risk_matches = risk_matches[risk_matches["device_category"].astype(str).str.strip().isin(sel_clean)]
 
             def clean_source_portal(val):
-                if 'NSSM' in str(val): return 'Approved Device Class A (NSNM) Details (ListOfApprovedRiskNSSMDevice)'
-                return 'Approved Risk Device List (ListOfApprovedRiskDevice)'
+                if 'NSSM' in str(val):
+                    return 'Approved Device Class A (NSNM) Details'
+                return 'Approved Risk Device List'
+
             if 'source_portal' in risk_matches.columns:
                 risk_matches['Classification Source Portal'] = risk_matches['source_portal'].apply(clean_source_portal)
             else:
-                risk_matches['Classification Source Portal'] = 'Approved Risk Device List (ListOfApprovedRiskDevice)'
+                risk_matches['Classification Source Portal'] = 'Approved Risk Device List'
 
             st.markdown(f"""
             <div class='audit-trace'>
