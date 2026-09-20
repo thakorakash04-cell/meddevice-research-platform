@@ -305,9 +305,9 @@ approved_payload = load_cdsco_approved_devices()
 
 def get_cdsco_sync_metadata():
     sync_info = {
-        "last_updated": "16-Sep-2026 16:12 UTC",
-        "status": "Active (Weekly Auto-Sync)",
-        "schedule": "Every Sunday at 02:00 AM",
+        "last_updated": "Loading...",
+        "status": "Active (Daily Auto-Sync)",
+        "schedule": "Every Day at 02:00 AM UTC",
         "risk_records": len(risk_payload["data"]) if not risk_payload["data"].empty else 0,
         "approved_records": len(approved_payload["data"]) if not approved_payload["data"].empty else 0
     }
