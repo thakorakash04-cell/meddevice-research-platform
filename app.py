@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 import hashlib
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import pandas as pd
 from urllib.parse import quote
 from collections import defaultdict
@@ -303,13 +303,18 @@ def load_cdsco_approved_devices():
 risk_payload = load_cdsco_combined_risk()
 approved_payload = load_cdsco_approved_devices()
 
+UTC = timezone.utc
+
 def get_cdsco_sync_metadata():
+    IST = timezone(timedelta(hours=5, minutes=30))
     sync_info = {
         "last_updated": "Loading...",
         "status": "Active (Daily Auto-Sync)",
-        "schedule": "Every Day at 02:00 AM UTC",
+        "schedule": "Every Day at 02:00 AM UTC (07:30 AM IST)",
         "risk_records": len(risk_payload["data"]) if not risk_payload["data"].empty else 0,
-        "approved_records": len(approved_payload["data"]) if not approved_payload["data"].empty else 0
+        "approved_records": len(approved_payload["data"]) if not approved_payload["data"].empty else 0,
+        "risk_delta": 0,
+        "approved_delta": 0
     }
     meta_path = os.path.join(BASE_DIR, "cdsco_metadata.json")
     if os.path.exists(meta_path):
@@ -317,12 +322,19 @@ def get_cdsco_sync_metadata():
             with open(meta_path, "r") as f:
                 meta = json.load(f)
                 dt = datetime.fromisoformat(meta.get("last_updated"))
-                sync_info["last_updated"] = dt.strftime("%d-%b-%Y %H:%M:%S UTC")
+                # Stored timestamps come from the GitHub runner in UTC; convert to IST for display
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=UTC)
+                dt_ist = dt.astimezone(IST)
+                sync_info["last_updated"] = dt_ist.strftime("%d-%b-%Y %H:%M:%S IST")
+                sync_info["risk_delta"] = int(meta.get("risk_delta", 0) or 0)
+                sync_info["approved_delta"] = int(meta.get("approved_delta", 0) or 0)
         except Exception:
             pass
     elif os.path.exists(os.path.join(BASE_DIR, "cdsco_approved_devices.parquet")):
         mtime = os.path.getmtime(os.path.join(BASE_DIR, "cdsco_approved_devices.parquet"))
-        sync_info["last_updated"] = datetime.fromtimestamp(mtime).strftime("%d-%b-%Y %H:%M:%S")
+        dt = datetime.fromtimestamp(mtime, tz=UTC).astimezone(IST)
+        sync_info["last_updated"] = dt.strftime("%d-%b-%Y %H:%M:%S IST")
     return sync_info
 
 sync_meta = get_cdsco_sync_metadata()
@@ -374,11 +386,12 @@ with st.sidebar:
     st.markdown(f"""
     <div style="background:#1e293b; border-radius:8px; padding:12px; border:1px solid #334155; margin-bottom:12px;">
         <div style="color:#10b981; font-weight:700; font-size:12px; display:flex; align-items:center; gap:6px;">
-            <span>🟢</span> CDSCO WEEKLY AUTO-SYNC ACTIVE
+            <span>🟢</span> CDSCO DAILY AUTO-SYNC ACTIVE
         </div>
         <div style="color:#f8fafc; font-size:12px; margin-top:6px;"><b>Last Data Fetched:</b><br><span style="color:#38bdf8;">{sync_meta['last_updated']}</span></div>
         <div style="color:#94a3b8; font-size:11px; margin-top:4px;"><b>Schedule:</b> {sync_meta['schedule']}</div>
         <div style="color:#94a3b8; font-size:11px; margin-top:2px;"><b>Verified Scope:</b> {sync_meta['risk_records']:,} Risk Classes | {sync_meta['approved_records']:,} Registrations</div>
+        <div style="color:#10b981; font-size:11px; margin-top:2px;"><b>New This Run:</b> +{sync_meta['risk_delta']:,} Risk Classes | +{sync_meta['approved_delta']:,} Registrations</div>
     </div>
     """, unsafe_allow_html=True)
 

@@ -2,7 +2,7 @@ name: Daily CDSCO Data Sync
 
 on:
   schedule:
-    # Runs at 02:00 UTC (07:30 AM IST) every single day
+    # Runs every single day at 02:00 UTC (07:30 AM IST)
     - cron: '0 2 * * *'
   # manual triggers
   workflow_dispatch:
