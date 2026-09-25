@@ -24,7 +24,7 @@ def call_gemini_api(
         }
 
     clean_key = api_key.strip()
-    models_to_try = [model, "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-flash"]
+    models_to_try = [model, "gemini-1.5-flash", "gemini-1.5-pro", "gemini-3.8-flash"]
     # Deduplicate while preserving order
     seen = set()
     models_to_try = [m for m in models_to_try if not (m in seen or seen.add(m))]
