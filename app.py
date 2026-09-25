@@ -10,6 +10,7 @@ import json
 import os
 import re
 import io
+import ui_chat
 
 urllib3.disable_warnings()
 
@@ -453,6 +454,10 @@ with st.sidebar:
     if os.path.exists(os.path.join(BASE_DIR, "cdsco_approved_devices.parquet")):
         with open(os.path.join(BASE_DIR, "cdsco_approved_devices.parquet"), "rb") as f:
             st.download_button("💾 Approved Devices (104k Parquet)", data=f, file_name="cdsco_approved_devices.parquet", mime="application/octet-stream")
+
+# ─── AI REGULATORY ASSISTANT & COMPANY EXPLORER ───────────────────────────────
+# Display open by default
+ui_chat.render_ai_chatbot(risk_payload["data"], approved_payload["data"])
 
 # ─── MAIN UI EXECUTION ────────────────────────────────────────────────────────
 if search_btn and (device_name.strip() or applicant_name.strip()):
