@@ -1,6 +1,7 @@
 import requests
 import json
 import re
+import time
 import pandas as pd
 from collections import Counter
 from typing import Dict, Any, List, Optional, Tuple
@@ -24,7 +25,17 @@ def call_gemini_api(
         }
 
     clean_key = api_key.strip()
-    models_to_try = [model, "gemini-1.5-flash", "gemini-1.5-pro", "gemini-3.8-flash"]
+    models_to_try = [
+        model,
+        "gemini-3.8-flash",
+        "gemini-3.7-flash",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-flash-latest",
+        "gemini-pro-latest",
+    ]
     # Deduplicate while preserving order
     seen = set()
     models_to_try = [m for m in models_to_try if not (m in seen or seen.add(m))]
@@ -58,43 +69,59 @@ def call_gemini_api(
     last_err = ""
     for mod in models_to_try:
         url = f"{GEMINI_API_BASE}/{mod}:generateContent?key={clean_key}"
-        try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=35)
-            if resp.status_code == 200:
-                data = resp.json()
-                candidates = data.get("candidates", [])
-                if candidates:
-                    parts = candidates[0].get("content", {}).get("parts", [])
-                    if parts:
-                        text_response = parts[0].get("text", "")
-                        return {
-                            "success": True,
-                            "text": text_response,
-                            "model_used": mod,
-                            "error": None
-                        }
-                return {
-                    "success": False,
-                    "error": "Gemini returned an empty response. Please try rephrasing."
-                }
-            else:
-                err_data = {}
-                try:
-                    err_data = resp.json()
-                except Exception:
-                    pass
-                msg = err_data.get("error", {}).get("message", f"HTTP {resp.status_code}: {resp.text[:200]}")
-                last_err = f"Model {mod} Error: {msg}"
-                # If invalid API key, don't try other models
-                if resp.status_code in [400, 403] and ("API_KEY_INVALID" in msg or "API key not valid" in msg):
+        # Retry transient "high demand" / rate-limit errors with backoff
+        for attempt in range(3):
+            try:
+                resp = requests.post(url, headers=headers, json=payload, timeout=35)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        if parts:
+                            text_response = parts[0].get("text", "")
+                            return {
+                                "success": True,
+                                "text": text_response,
+                                "model_used": mod,
+                                "error": None
+                            }
                     return {
                         "success": False,
-                        "error": "Invalid Gemini API Key. Please verify your Google AI Studio API key."
+                        "error": "Gemini returned an empty response. Please try rephrasing."
                     }
-        except requests.exceptions.Timeout:
-            last_err = f"Request timed out connecting to Gemini ({mod})."
-        except Exception as e:
-            last_err = str(e)
+                else:
+                    err_data = {}
+                    try:
+                        err_data = resp.json()
+                    except Exception:
+                        pass
+                    msg = err_data.get("error", {}).get("message", f"HTTP {resp.status_code}: {resp.text[:200]}")
+                    last_err = f"Model {mod} Error: {msg}"
+                    # If invalid API key, don't try other models
+                    if resp.status_code in [400, 403] and ("API_KEY_INVALID" in msg or "API key not valid" in msg):
+                        return {
+                            "success": False,
+                            "error": "Invalid Gemini API Key. Please verify your Google AI Studio API key."
+                        }
+                    # If transient rate-limit / high demand, retry same model
+                    transient = any(k in msg.lower() for k in ["high demand", "rate limit", "resource has been exhausted", "try again later", "503", "500", "429"])
+                    if transient and attempt < 2:
+                        time.sleep(2 ** attempt + 1)
+                        continue
+                    break
+            except requests.exceptions.Timeout:
+                last_err = f"Request timed out connecting to Gemini ({mod})."
+                if attempt < 2:
+                    time.sleep(2 ** attempt + 1)
+                    continue
+                break
+            except Exception as e:
+                last_err = str(e)
+                if attempt < 2:
+                    time.sleep(2 ** attempt + 1)
+                    continue
+                break
 
     return {
         "success": False,
