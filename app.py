@@ -10,6 +10,7 @@ import json
 import os
 import re
 import io
+import time
 
 urllib3.disable_warnings()
 
@@ -23,16 +24,33 @@ st.set_page_config(
 # ─── BASE DIRECTORY FOR PARQUET FILES ─────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# ─── GLOBAL STYLES ────────────────────────────────────────────────────────────
+# ─── ENHANCED GLOBAL STYLES WITH ANIMATIONS ───────────────────────────────────
 st.markdown("""
 <style>
 /* App Main View */
 [data-testid="stAppViewContainer"] { background: #f8fafc; }
 
-/* ─── SIDEBAR STYLING ─── */
+/* ─── SIDEBAR STYLING & ANIMATIONS ─── */
 [data-testid="stSidebar"] {
     background-color: #f1f5f9;
     padding-top: 1rem;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Sidebar Collapse Animation */
+.sidebar-collapse {
+    animation: slideOut 0.5s ease-in-out forwards;
+}
+
+@keyframes slideOut {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(-100%);
+        opacity: 0;
+    }
 }
 
 /* Sidebar Headings */
@@ -166,6 +184,94 @@ div[data-baseweb="menu"] div[aria-selected="true"] {
 .pill-C { background:#fff7ed; color:#ea580c; padding:2px 8px; border-radius:12px; font-weight:bold; font-size:11px; }
 .pill-B { background:#fefce8; color:#ca8a04; padding:2px 8px; border-radius:12px; font-weight:bold; font-size:11px; }
 .pill-A { background:#f0fdf4; color:#16a34a; padding:2px 8px; border-radius:12px; font-weight:bold; font-size:11px; }
+
+/* ─── EXCEL-STYLE FILTER PANEL ─── */
+.filter-panel {
+    background: #f0f4f8;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+}
+
+.filter-title {
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 10px;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.filter-input-group {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    align-items: center;
+}
+
+.filter-input-group input,
+.filter-input-group select {
+    padding: 6px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    font-size: 12px;
+    background: #ffffff;
+}
+
+.filter-input-group input::placeholder {
+    color: #94a3b8;
+}
+
+.filter-button {
+    background: #0284c7;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.filter-button:hover {
+    background: #0369a1;
+    box-shadow: 0 2px 8px rgba(2, 132, 199, 0.3);
+}
+
+.filter-button-clear {
+    background: #e2e8f0;
+    color: #0f172a;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.filter-button-clear:hover {
+    background: #cbd5e1;
+}
+
+/* ─── NOTIFICATION ANIMATIONS ─── */
+@keyframes slideIn {
+    from {
+        transform: translateY(-20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.search-notification {
+    animation: slideIn 0.4s ease-out;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -275,6 +381,96 @@ def robust_dataframe_search(df, query, target_columns, ai_mode=True, match_mode=
             matched_df = matched_df.sort_values(by='_rank').drop(columns=['_rank'])
 
         return matched_df
+
+# ─── EXCEL-STYLE COLUMN FILTER FUNCTION ───────────────────────────────────────
+def excel_style_filter(df, filter_key_prefix=""):
+    """
+    Creates an Excel-style filter panel for dataframe columns
+    
+    Filter types:
+    - text_contains: Filter column by text pattern
+    - exact_match: Filter column by exact value
+    - dropdown: Filter by selecting from unique values
+    """
+    if df.empty:
+        return df
+    
+    st.markdown('<div class="filter-panel">', unsafe_allow_html=True)
+    st.markdown('<div class="filter-title">🔍 Column-Level Filters (Excel-Style)</div>', unsafe_allow_html=True)
+    
+    # Create columns for filter controls
+    filter_cols = st.columns([2, 2, 2, 1, 1])
+    
+    with filter_cols[0]:
+        filter_column = st.selectbox("Select Column", options=df.columns, key=f"filter_col_{filter_key_prefix}")
+    
+    with filter_cols[1]:
+        filter_mode = st.selectbox("Filter Type", 
+            options=["Text Contains", "Exact Match", "From Dropdown"],
+            key=f"filter_mode_{filter_key_prefix}")
+    
+    filtered_df = df.copy()
+    
+    # Text Contains Filter
+    if filter_mode == "Text Contains" and filter_column:
+        with filter_cols[2]:
+            filter_text = st.text_input("Enter text to search", placeholder="e.g., Laser, Abbott", key=f"filter_text_{filter_key_prefix}")
+        
+        with filter_cols[3]:
+            if st.button("🔎 Filter", key=f"apply_filter_{filter_key_prefix}"):
+                if filter_text.strip():
+                    filtered_df = filtered_df[
+                        filtered_df[filter_column].astype(str).str.lower().str.contains(
+                            filter_text.lower(), regex=False, na=False
+                        )
+                    ]
+                    st.success(f"✅ Applied: Text contains '{filter_text}' in {filter_column}")
+        
+        with filter_cols[4]:
+            if st.button("🔄 Clear", key=f"clear_filter_{filter_key_prefix}"):
+                st.rerun()
+    
+    # Exact Match Filter
+    elif filter_mode == "Exact Match" and filter_column:
+        with filter_cols[2]:
+            filter_value = st.text_input("Exact value to match", placeholder="Type exact value", key=f"filter_exact_{filter_key_prefix}")
+        
+        with filter_cols[3]:
+            if st.button("🔎 Filter", key=f"apply_exact_{filter_key_prefix}"):
+                if filter_value.strip():
+                    filtered_df = filtered_df[
+                        filtered_df[filter_column].astype(str).str.strip() == filter_value.strip()
+                    ]
+                    st.success(f"✅ Applied: Exact match '{filter_value}' in {filter_column}")
+        
+        with filter_cols[4]:
+            if st.button("🔄 Clear", key=f"clear_exact_{filter_key_prefix}"):
+                st.rerun()
+    
+    # Dropdown Filter
+    elif filter_mode == "From Dropdown" and filter_column:
+        unique_values = sorted(df[filter_column].dropna().astype(str).unique().tolist())
+        
+        with filter_cols[2]:
+            selected_values = st.multiselect(
+                "Select values", 
+                options=unique_values,
+                key=f"filter_dropdown_{filter_key_prefix}"
+            )
+        
+        with filter_cols[3]:
+            if st.button("🔎 Filter", key=f"apply_dropdown_{filter_key_prefix}"):
+                if selected_values:
+                    filtered_df = filtered_df[filtered_df[filter_column].astype(str).isin(selected_values)]
+                    st.success(f"✅ Applied: Filtered {len(selected_values)} values in {filter_column}")
+        
+        with filter_cols[4]:
+            if st.button("🔄 Clear", key=f"clear_dropdown_{filter_key_prefix}"):
+                st.rerun()
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    return filtered_df
 
 # ─── DATA LOADERS (ACCELERATED PARQUET SNAPSHOTS FROM LIVE PORTALS) ───────────
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -454,12 +650,14 @@ with st.sidebar:
         with open(os.path.join(BASE_DIR, "cdsco_approved_devices.parquet"), "rb") as f:
             st.download_button("💾 Approved Devices (104k Parquet)", data=f, file_name="cdsco_approved_devices.parquet", mime="application/octet-stream")
 
-# ─── MAIN UI EXECUTION ────────────────────────────────────────────────────────
+# ─── MAIN UI EXECUTION ─────────────────────────────────────────────────────────
 if search_btn and (device_name.strip() or applicant_name.strip()):
+    
+    st.markdown('<div class="search-notification">', unsafe_allow_html=True)
 
-    # ══════════════════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════════════════
     #  1. US FDA SECTION (TOP POSITION)
-    # ══════════════════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════════════════
     if jurisdiction in ["Dual (US FDA + CDSCO)", "US FDA Only"]:
         st.markdown("<div class='card card-blue'><h3 style='color:#0284c7;margin:0'>🇺🇸 US FDA — 510(k) Premarket Clearances</h3></div>", unsafe_allow_html=True)
         fda_res = search_us_fda(device_name, applicant_name, limit=20, ai_mode=ai_search_toggle)
@@ -484,13 +682,18 @@ if search_btn and (device_name.strip() or applicant_name.strip()):
                 "Advisory Committee": r.get("advisory_committee_description", "")
             } for r in fda_res["results"]])
 
+            # ✅ EXCEL-STYLE FILTERS FOR FDA DATA
+            df_fda_filtered = excel_style_filter(df_fda_export, filter_key_prefix="fda")
+            
             st.download_button(
                 label="📥 Download US FDA 510(k) Results (.xlsx)",
-                data=to_excel_bytes(df_fda_export, sheet_name="FDA_510k"),
+                data=to_excel_bytes(df_fda_filtered, sheet_name="FDA_510k"),
                 file_name=f"US_FDA_510k_{device_name}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="dl_fda_top"
             )
+
+            st.dataframe(df_fda_filtered, use_container_width=True)
 
             grouped = defaultdict(list)
             for r in fda_res["results"]:
@@ -516,18 +719,18 @@ if search_btn and (device_name.strip() or applicant_name.strip()):
         st.write("")
         st.write("")
 
-    # ══════════════════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════════════════
     #  2. CDSCO SECTION (BOTTOM POSITION)
-    # ══════════════════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════════════════
     if jurisdiction in ["Dual (US FDA + CDSCO)", "CDSCO India Only"]:
         st.markdown("<div class='card card-green'><h3 style='color:#059669;margin:0'>🇮🇳 CDSCO India — Regulatory Intelligence</h3></div>", unsafe_allow_html=True)
 
         term = device_name.strip()
         app_term = applicant_name.strip()
 
-        # ──────────────────────────────────────────────────────────────────────
+        # ────────────────────────────────────────────────────────────────────────
         # STEP 1: Risk Classification Lookup (Risk + NSSM Portals)
-        # ──────────────────────────────────────────────────────────────────────
+        # ────────────────────────────────────────────────────────────────────────
         st.markdown("#### Step 1: Risk Classification Lookup")
         st.caption("Covers: `ListOfApprovedRiskDevice` + `ListOfApprovedRiskNSSMDevice` (includes Class A NSNM Details)")
 
@@ -581,15 +784,18 @@ if search_btn and (device_name.strip() or applicant_name.strip()):
                     "intended_use": "Intended Use"
                 })
 
+                # ✅ EXCEL-STYLE FILTERS FOR RISK DATA
+                df_risk_filtered = excel_style_filter(df_risk_disp, filter_key_prefix="risk")
+                
                 st.download_button(
                     label="📥 Download CDSCO Risk Classification Results (.xlsx)",
-                    data=to_excel_bytes(df_risk_disp, sheet_name="CDSCO_Risk_Classes"),
+                    data=to_excel_bytes(df_risk_filtered, sheet_name="CDSCO_Risk_Classes"),
                     file_name=f"CDSCO_Risk_{device_name}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key="dl_cdsco_risk"
                 )
 
-                st.dataframe(df_risk_disp, use_container_width=True)
+                st.dataframe(df_risk_filtered, use_container_width=True)
             else:
                 st.warning(f"No official CDSCO classification matches found for '{device_name}'. Try enabling the AI Search toggle or changing keyword matching mode.")
         else:
@@ -597,9 +803,9 @@ if search_btn and (device_name.strip() or applicant_name.strip()):
 
         st.markdown("---")
 
-        # ──────────────────────────────────────────────────────────────────────
+        # ────────────────────────────────────────────────────────────────────────
         # STEP 2: Available Manufacturers & Importers (104k Live Records)
-        # ──────────────────────────────────────────────────────────────────────
+        # ────────────────────────────────────────────────────────────────────────
         st.markdown("#### Step 2: Available Manufacturers & Importers")
         st.caption("Official data from: `https://cdscomdonline.gov.in/NewMedDev/ListOfApprovedDevices` (Manufacturer + Importer registers)")
 
@@ -656,17 +862,20 @@ if search_btn and (device_name.strip() or applicant_name.strip()):
                     "instname": "Issuing Authority"
                 })
 
+                # ✅ EXCEL-STYLE FILTERS FOR APPROVED DEVICES DATA
+                df_app_filtered = excel_style_filter(df_app_disp, filter_key_prefix="approved")
+                
                 st.download_button(
                     label="📥 Download CDSCO Approved Devices Results (.xlsx)",
-                    data=to_excel_bytes(df_app_disp, sheet_name="Approved_Devices"),
+                    data=to_excel_bytes(df_app_filtered, sheet_name="Approved_Devices"),
                     file_name=f"CDSCO_Approved_Devices_{device_name}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key="dl_cdsco_app"
                 )
 
-                st.dataframe(df_app_disp.head(300), use_container_width=True)
-                if len(df_app_disp) > 300:
-                    st.caption(f"Showing top 300 of {len(df_app_disp):,} results. Narrow your search by applicant name or role if needed.")
+                st.dataframe(df_app_filtered.head(300), use_container_width=True)
+                if len(df_app_filtered) > 300:
+                    st.caption(f"Showing top 300 of {len(df_app_filtered):,} results. Narrow your search by applicant name or role if needed.")
 
                 with st.expander("🏢 Grouped by Company Profiles (Expand to view portfolio)", expanded=False):
                     grouped_co = defaultdict(list)
@@ -687,3 +896,5 @@ if search_btn and (device_name.strip() or applicant_name.strip()):
                 st.info(f"No approved devices matched '{device_name}'. Try enabling the AI Search toggle or broadening search scope.")
         else:
             st.error("Approved devices dataset not loaded.")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
