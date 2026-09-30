@@ -193,6 +193,57 @@ div[data-baseweb="menu"] div[role="option"]:hover {
     font-weight: 600;
 }
 
+/* ─── FDA RESULTS TABLE STYLING ─── */
+.fda-result-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.fda-result-content {
+    flex: 1;
+}
+
+.fda-result-links {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    justify-content: center;
+}
+
+.fda-link-btn {
+    padding: 6px 12px;
+    border-radius: 4px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 12px;
+    text-align: center;
+    transition: all 0.2s;
+    display: inline-block;
+}
+
+.fda-pmn-link {
+    background: #0284c7;
+    color: white;
+}
+
+.fda-pmn-link:hover {
+    background: #0369a1;
+}
+
+.fda-pdf-link {
+    background: #059669;
+    color: white;
+}
+
+.fda-pdf-link:hover {
+    background: #047857;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -538,6 +589,48 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
             """, unsafe_allow_html=True)
             st.write("")
 
+            # Create dataframe with clickable links
+            df_fda_display = []
+            for r in fda_res["results"]:
+                k_num = r.get("k_number", "")
+                device = r.get("device_name", "")
+                applicant = r.get("applicant", "")
+                clearance = r.get("decision_date", "")
+                dev_class = r.get("openfda", {}).get("device_class", "")
+                
+                pmn_link = get_fda_pmn_link(k_num)
+                pdf_link = get_fda_pdf_link(k_num)
+                
+                # Build HTML with clickable links
+                links_html = ""
+                if pmn_link:
+                    links_html += f'<a href="{pmn_link}" target="_blank" class="fda-link-btn fda-pmn-link">📋 View PMN</a>'
+                if pdf_link:
+                    links_html += f'<a href="{pdf_link}" target="_blank" class="fda-link-btn fda-pdf-link">📄 PDF Summary</a>'
+                
+                content_html = f"""
+                <div class="fda-result-row">
+                    <div class="fda-result-content">
+                        <div style="font-weight: 700; color: #0f172a; margin-bottom: 4px;">
+                            <span style="background: #0284c7; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">K{k_num.replace('K', '')}</span>
+                            {device}
+                        </div>
+                        <div style="color: #475569; font-size: 13px; margin-bottom: 4px;">
+                            <b>Applicant:</b> {applicant}
+                        </div>
+                        <div style="color: #64748b; font-size: 12px; display: flex; gap: 16px;">
+                            <span><b>Clearance:</b> {clearance}</span>
+                            <span><b>Class:</b> {dev_class}</span>
+                        </div>
+                    </div>
+                    <div class="fda-result-links">
+                        {links_html}
+                    </div>
+                </div>
+                """
+                df_fda_display.append(content_html)
+            
+            # Download button
             df_fda_export = pd.DataFrame([{
                 "510(k) Number": r.get("k_number", ""),
                 "Device Name": r.get("device_name", ""),
@@ -545,7 +638,7 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                 "Clearance Date": r.get("decision_date", ""),
                 "Device Class": r.get("openfda", {}).get("device_class", ""),
             } for r in fda_res["results"]])
-
+            
             st.download_button(
                 label="📥 Download FDA 510(k) Results (.xlsx)",
                 data=to_excel_bytes(df_fda_export, sheet_name="FDA_510k"),
@@ -553,8 +646,11 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="dl_fda"
             )
-
-            st.dataframe(df_fda_export, use_container_width=True)
+            st.write("")
+            
+            # Display results with clickable links
+            for html_result in df_fda_display:
+                st.markdown(html_result, unsafe_allow_html=True)
         else:
             st.warning("No FDA 510(k) records matched.")
 
