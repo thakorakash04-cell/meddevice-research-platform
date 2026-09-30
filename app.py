@@ -24,12 +24,12 @@ st.set_page_config(
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ─── SESSION STATE INITIALIZATION ─────────────────────────────────────────────
-if 'filter_applied' not in st.session_state:
-    st.session_state.filter_applied = {}
+if 'column_filters' not in st.session_state:
+    st.session_state.column_filters = {}
 if 'search_executed' not in st.session_state:
     st.session_state.search_executed = False
 
-# ──��� ENHANCED GLOBAL STYLES ───────────────────────────────────────────────────
+# ─── ENHANCED GLOBAL STYLES ───────────────────────────────────────────────────
 st.markdown("""
 <style>
 /* App Main View */
@@ -157,33 +157,29 @@ div[data-baseweb="menu"] div[role="option"]:hover {
     margin-top: 6px;
 }
 
-/* ─── EXCEL-STYLE FILTER PANEL ─── */
-.filter-panel {
-    background: #f0f4f8;
+/* ─── COLUMN FILTER STYLES (EXCEL-LIKE) ─── */
+.column-filter-header {
+    background: linear-gradient(135deg, #f0f4f8 0%, #e2e8f0 100%);
     border: 1px solid #cbd5e1;
     border-radius: 6px;
-    padding: 14px;
-    margin-bottom: 16px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.08);
-}
-
-.filter-title {
-    font-weight: 700;
-    color: #0f172a;
-    margin-bottom: 12px;
-    font-size: 13px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.filter-success {
-    background: #f0fdf4;
-    color: #16a34a;
-    border: 1px solid #86efac;
-    border-radius: 4px;
     padding: 8px 12px;
+    margin-bottom: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 600;
+    color: #0f172a;
     font-size: 12px;
-    margin-top: 8px;
+}
+
+.filter-badge {
+    background: #0284c7;
+    color: white;
+    border-radius: 12px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 4px;
 }
 
 .results-info {
@@ -297,117 +293,64 @@ def robust_dataframe_search(df, query, target_columns, ai_mode=True, match_mode=
 
         return matched_df
 
-# ─── FIXED EXCEL-STYLE COLUMN FILTER FUNCTION ────────────────────────────────
-def excel_style_filter(df, filter_key_prefix=""):
-    """Excel-style column filters that actually work"""
+# ─── EXCEL-STYLE PER-COLUMN FILTER FUNCTION ────────────────────────────────
+def apply_column_filters(df, filter_key_prefix=""):
+    """Apply per-column filters like Excel"""
     if df.empty:
         return df
     
-    st.markdown('<div class="filter-panel">', unsafe_allow_html=True)
-    st.markdown('<div class="filter-title">🔍 Column-Level Filters (Excel-Style)</div>', unsafe_allow_html=True)
-    
-    col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 1, 1])
-    
-    with col1:
-        filter_column = st.selectbox(
-            "Select Column", 
-            options=list(df.columns),
-            key=f"fcol_{filter_key_prefix}"
-        )
-    
-    with col2:
-        filter_mode = st.selectbox(
-            "Filter Type", 
-            options=["Text Contains", "Exact Match", "From Dropdown"],
-            key=f"fmode_{filter_key_prefix}"
-        )
-    
     filtered_df = df.copy()
-    filter_applied = False
     
-    try:
-        # TEXT CONTAINS
-        if filter_mode == "Text Contains":
-            with col3:
-                filter_text = st.text_input(
-                    "Enter text", 
-                    placeholder="e.g., Laser",
-                    key=f"ftext_{filter_key_prefix}"
+    # Display filter controls for each column
+    st.markdown(f"<div class='column-filter-header'>🔍 Column Filters (Click expander to filter each column)</div>", unsafe_allow_html=True)
+    
+    with st.expander("⚙️ Filter Controls", expanded=False):
+        filter_cols = st.columns(len(df.columns))
+        
+        for idx, col in enumerate(df.columns):
+            with filter_cols[idx]:
+                st.markdown(f"**{col}**")
+                filter_type = st.radio(
+                    f"Filter type for {col}",
+                    ["All", "Text Contains", "Exact Match"],
+                    key=f"ft_{filter_key_prefix}_{col}",
+                    label_visibility="collapsed"
                 )
-            
-            with col4:
-                if st.button("🔎", key=f"fbtn_{filter_key_prefix}", help="Apply filter"):
-                    if filter_text.strip():
+                
+                if filter_type == "Text Contains":
+                    search_text = st.text_input(
+                        f"Search in {col}",
+                        key=f"fc_{filter_key_prefix}_{col}",
+                        placeholder="Type to search..."
+                    )
+                    if search_text.strip():
                         filtered_df = filtered_df[
-                            filtered_df[filter_column].astype(str).str.lower().str.contains(
-                                filter_text.lower(), regex=False, na=False
+                            filtered_df[col].astype(str).str.lower().str.contains(
+                                search_text.lower(), regex=False, na=False
                             )
                         ]
-                        filter_applied = True
-                        st.session_state.filter_applied[filter_key_prefix] = f"Text contains '{filter_text}'"
-            
-            with col5:
-                if st.button("✕", key=f"fclear_{filter_key_prefix}", help="Clear filter"):
-                    st.session_state.filter_applied.pop(filter_key_prefix, None)
-                    st.rerun()
-        
-        # EXACT MATCH
-        elif filter_mode == "Exact Match":
-            with col3:
-                filter_value = st.text_input(
-                    "Exact value", 
-                    placeholder="Type exactly",
-                    key=f"fexact_{filter_key_prefix}"
-                )
-            
-            with col4:
-                if st.button("🔎", key=f"fexactbtn_{filter_key_prefix}", help="Apply filter"):
-                    if filter_value.strip():
-                        filtered_df = filtered_df[
-                            filtered_df[filter_column].astype(str).str.strip() == filter_value.strip()
-                        ]
-                        filter_applied = True
-                        st.session_state.filter_applied[filter_key_prefix] = f"Exact match '{filter_value}'"
-            
-            with col5:
-                if st.button("✕", key=f"fclearexa_{filter_key_prefix}", help="Clear filter"):
-                    st.session_state.filter_applied.pop(filter_key_prefix, None)
-                    st.rerun()
-        
-        # DROPDOWN
-        else:  # From Dropdown
-            unique_vals = sorted(df[filter_column].dropna().astype(str).unique().tolist())[:50]
-            
-            with col3:
-                selected_values = st.multiselect(
-                    "Select values", 
-                    options=unique_vals,
-                    key=f"fdrop_{filter_key_prefix}"
-                )
-            
-            with col4:
-                if st.button("🔎", key=f"fdropbtn_{filter_key_prefix}", help="Apply filter"):
-                    if selected_values:
-                        filtered_df = filtered_df[
-                            filtered_df[filter_column].astype(str).isin(selected_values)
-                        ]
-                        filter_applied = True
-                        st.session_state.filter_applied[filter_key_prefix] = f"Selected {len(selected_values)} values"
-            
-            with col5:
-                if st.button("✕", key=f"fcleardrop_{filter_key_prefix}", help="Clear filter"):
-                    st.session_state.filter_applied.pop(filter_key_prefix, None)
-                    st.rerun()
-        
-        # Show filter status
-        if filter_key_prefix in st.session_state.filter_applied:
-            st.markdown(f"<div class='filter-success'>✅ Filter applied: {st.session_state.filter_applied[filter_key_prefix]}</div>", 
-                       unsafe_allow_html=True)
+                
+                elif filter_type == "Exact Match":
+                    unique_vals = sorted(filtered_df[col].dropna().astype(str).unique().tolist())[:50]
+                    selected = st.multiselect(
+                        f"Select values in {col}",
+                        options=unique_vals,
+                        key=f"fm_{filter_key_prefix}_{col}",
+                        max_selections=10
+                    )
+                    if selected:
+                        filtered_df = filtered_df[filtered_df[col].astype(str).isin(selected)]
     
-    except Exception as e:
-        st.error(f"Filter error: {str(e)}")
+    # Show how many rows are displayed
+    initial_count = len(df)
+    filtered_count = len(filtered_df)
+    if filtered_count < initial_count:
+        st.markdown(f"""
+        <div class='results-info'>
+            🔎 Filtered: <b>{filtered_count:,}</b> of {initial_count:,} rows | Active filters applied
+        </div>
+        """, unsafe_allow_html=True)
     
-    st.markdown('</div>', unsafe_allow_html=True)
     return filtered_df
 
 # ─── DATA LOADERS ────────────────────────────────────────────────────────────
@@ -603,8 +546,8 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                 "Device Class": r.get("openfda", {}).get("device_class", ""),
             } for r in fda_res["results"]])
 
-            # Apply filters
-            df_fda_filtered = excel_style_filter(df_fda_export, filter_key_prefix="fda")
+            # Apply per-column filters
+            df_fda_filtered = apply_column_filters(df_fda_export, filter_key_prefix="fda")
             
             st.download_button(
                 label="📥 Download FDA 510(k) Results (.xlsx)",
@@ -674,8 +617,8 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                     "intended_use": "Intended Use"
                 })
 
-                # Apply filters
-                df_risk_filtered = excel_style_filter(df_risk_disp, filter_key_prefix="risk")
+                # Apply per-column filters
+                df_risk_filtered = apply_column_filters(df_risk_disp, filter_key_prefix="risk")
                 
                 st.download_button(
                     label="📥 Download Risk Classification Results (.xlsx)",
@@ -732,8 +675,8 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                     "brandname": "Brand Name"
                 })
 
-                # Apply filters
-                df_app_filtered = excel_style_filter(df_app_disp, filter_key_prefix="approved")
+                # Apply per-column filters
+                df_app_filtered = apply_column_filters(df_app_disp, filter_key_prefix="approved")
                 
                 st.download_button(
                     label="📥 Download Approved Devices (.xlsx)",
@@ -743,7 +686,7 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                     key="dl_cdsco_app"
                 )
 
-                # ✅ FIXED: Show ALL results, not just 300
+                # Display all results with scrolling
                 st.dataframe(df_app_filtered, use_container_width=True, height=600)
             else:
                 st.info(f"No approved devices matched '{device_name}'.")
