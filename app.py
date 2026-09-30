@@ -29,7 +29,7 @@ if 'filter_applied' not in st.session_state:
 if 'search_executed' not in st.session_state:
     st.session_state.search_executed = False
 
-# ─── ENHANCED GLOBAL STYLES ───────────────────────────────────────────────────
+# ──��� ENHANCED GLOBAL STYLES ───────────────────────────────────────────────────
 st.markdown("""
 <style>
 /* App Main View */
@@ -184,6 +184,17 @@ div[data-baseweb="menu"] div[role="option"]:hover {
     padding: 8px 12px;
     font-size: 12px;
     margin-top: 8px;
+}
+
+.results-info {
+    background: #eff6ff;
+    color: #0369a1;
+    border: 1px solid #bfdbfe;
+    border-radius: 4px;
+    padding: 10px 12px;
+    font-size: 12px;
+    margin-bottom: 12px;
+    font-weight: 600;
 }
 
 </style>
@@ -399,7 +410,7 @@ def excel_style_filter(df, filter_key_prefix=""):
     st.markdown('</div>', unsafe_allow_html=True)
     return filtered_df
 
-# ─── DATA LOADERS ─────────────────────────────────────────────────────────────
+# ─── DATA LOADERS ────────────────────────────────────────────────────────────
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_cdsco_combined_risk():
     p_path = os.path.join(BASE_DIR, "cdsco_combined_risk.parquet")
@@ -704,7 +715,11 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
             elif cdsco_role == "Importer Only":
                 app_matches = app_matches[app_matches["role"] == "Importer"]
 
-            st.markdown(f"📊 Found: {len(app_matches):,} registrations")
+            st.markdown(f"""
+            <div class='results-info'>
+                📊 Found: <b>{len(app_matches):,} total registrations</b> | Displaying all results below
+            </div>
+            """, unsafe_allow_html=True)
 
             if not app_matches.empty:
                 disp_cols = ["devicename", "role", "address", "str_licence_no", "classname", "brandname"]
@@ -728,9 +743,8 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                     key="dl_cdsco_app"
                 )
 
-                st.dataframe(df_app_filtered.head(300), use_container_width=True)
-                if len(df_app_filtered) > 300:
-                    st.caption(f"Showing 300 of {len(df_app_filtered):,} results")
+                # ✅ FIXED: Show ALL results, not just 300
+                st.dataframe(df_app_filtered, use_container_width=True, height=600)
             else:
                 st.info(f"No approved devices matched '{device_name}'.")
 
