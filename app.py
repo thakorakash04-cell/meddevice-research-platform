@@ -546,18 +546,15 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                 "Device Class": r.get("openfda", {}).get("device_class", ""),
             } for r in fda_res["results"]])
 
-            # Apply per-column filters
-            df_fda_filtered = apply_column_filters(df_fda_export, filter_key_prefix="fda")
-            
             st.download_button(
                 label="📥 Download FDA 510(k) Results (.xlsx)",
-                data=to_excel_bytes(df_fda_filtered, sheet_name="FDA_510k"),
+                data=to_excel_bytes(df_fda_export, sheet_name="FDA_510k"),
                 file_name=f"FDA_510k_{device_name}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="dl_fda"
             )
 
-            st.dataframe(df_fda_filtered, use_container_width=True)
+            st.dataframe(df_fda_export, use_container_width=True)
         else:
             st.warning("No FDA 510(k) records matched.")
 
@@ -690,4 +687,3 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                 st.dataframe(df_app_filtered, use_container_width=True, height=600)
             else:
                 st.info(f"No approved devices matched '{device_name}'.")
-
