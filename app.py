@@ -619,215 +619,225 @@ with st.sidebar:
 # ─── MAIN UI EXECUTION ────────────────────────────────────────────────────────
 if st.session_state.search_executed and (device_name.strip() or applicant_name.strip()):
     
-    # US FDA SECTION
-    if jurisdiction in ["Dual (US FDA + CDSCO)", "US FDA Only"]:
-        st.markdown("<div class='card card-blue'><h3 style='color:#0284c7;margin:0'>🇺🇸 US FDA — 510(k) Premarket Clearances</h3></div>", unsafe_allow_html=True)
-        with st.spinner("Loading all matching FDA 510(k) records..."):
-            fda_res = search_us_fda(device_name, applicant_name, ai_mode=ai_search_toggle)
+    tab_fda, tab_risk, tab_approved = st.tabs([
+        "🇺🇸 FDA 510(k)", "🇮🇳 CDSCO Risk Classification", "🇮🇳 Approved Devices"
+    ])
+    term = device_name.strip()
+    app_term = applicant_name.strip()
 
-        if fda_res.get("status") == "success" and fda_res["results"]:
-            st.info(f"Loaded {len(fda_res['results']):,} of {fda_res['total']:,} matching FDA 510(k) records. The Excel download includes all loaded records.")
-            st.markdown(f"""
-            <div class='audit-trace'>
-                🔐 openFDA Hash: <code>{fda_res['hash'][:16]}...</code><br>
-                📡 Query: <a href='{fda_res['url']}' style='color:#38bdf8;' target='_blank'>View Query</a>
-            </div>
-            """, unsafe_allow_html=True)
-            st.write("")
+    with tab_fda:
+        if jurisdiction in ["Dual (US FDA + CDSCO)", "US FDA Only"]:
+            st.markdown("<div class='card card-blue'><h3 style='color:#0284c7;margin:0'>🇺🇸 US FDA — 510(k) Premarket Clearances</h3></div>", unsafe_allow_html=True)
+            with st.spinner("Loading all matching FDA 510(k) records..."):
+                fda_res = search_us_fda(device_name, applicant_name, ai_mode=ai_search_toggle)
 
-            # Create dataframe with clickable links
-            df_fda_display = []
-            for r in fda_res["results"]:
-                k_num = r.get("k_number", "")
-                device = r.get("device_name", "")
-                applicant = r.get("applicant", "")
-                clearance = r.get("decision_date", "")
-                dev_class = r.get("openfda", {}).get("device_class", "")
-                
-                pmn_link = get_fda_pmn_link(k_num)
-                pdf_link = get_fda_pdf_link(k_num)
-                
-                # Build HTML with clickable links
-                links_html = ""
-                if pmn_link:
-                    links_html += f'<a href="{pmn_link}" target="_blank" class="fda-link-btn fda-pmn-link">📋 View PMN</a>'
-                if pdf_link:
-                    links_html += f'<a href="{pdf_link}" target="_blank" class="fda-link-btn fda-pdf-link">📄 PDF Summary</a>'
-                
-                content_html = f"""
-                <div class="fda-result-row">
-                    <div class="fda-result-content">
-                        <div style="font-weight: 700; color: #0f172a; margin-bottom: 4px;">
-                            <span style="background: #0284c7; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">K{k_num.replace('K', '')}</span>
-                            {device}
-                        </div>
-                        <div style="color: #475569; font-size: 13px; margin-bottom: 4px;">
-                            <b>Applicant:</b> {applicant}
-                        </div>
-                        <div style="color: #64748b; font-size: 12px; display: flex; gap: 16px;">
-                            <span><b>Clearance:</b> {clearance}</span>
-                            <span><b>Class:</b> {dev_class}</span>
-                        </div>
-                    </div>
-                    <div class="fda-result-links">
-                        {links_html}
-                    </div>
+            if fda_res.get("status") == "success" and fda_res["results"]:
+                st.info(f"Loaded {len(fda_res['results']):,} of {fda_res['total']:,} matching FDA 510(k) records. Use column filters below; the Excel download includes the filtered records.")
+                st.markdown(f"""
+                <div class='audit-trace'>
+                    🔐 openFDA Hash: <code>{fda_res['hash'][:16]}...</code><br>
+                    📡 Query: <a href='{fda_res['url']}' style='color:#38bdf8;' target='_blank'>View Query</a>
                 </div>
-                """
-                df_fda_display.append(content_html)
-            
-            # Download button
-            df_fda_export = pd.DataFrame([{
-                "510(k) Number": r.get("k_number", ""),
-                "Device Name": r.get("device_name", ""),
-                "Applicant": r.get("applicant", ""),
-                "Clearance Date": r.get("decision_date", ""),
-                "Device Class": r.get("openfda", {}).get("device_class", ""),
-            } for r in fda_res["results"]])
-            
-            st.download_button(
-                label="📥 Download FDA 510(k) Results (.xlsx)",
-                data=to_excel_bytes(df_fda_export, sheet_name="FDA_510k"),
-                file_name=f"FDA_510k_{device_name}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="dl_fda"
-            )
+                """, unsafe_allow_html=True)
+                st.write("")
+
+                df_fda_filter = pd.DataFrame([{
+                    "510(k) Number": r.get("k_number", ""),
+                    "Device Name": r.get("device_name", ""),
+                    "Applicant": r.get("applicant", ""),
+                    "Clearance Date": r.get("decision_date", ""),
+                    "Device Class": ", ".join(r.get("openfda", {}).get("device_class", []))
+                        if isinstance(r.get("openfda", {}).get("device_class", ""), list)
+                        else r.get("openfda", {}).get("device_class", ""),
+                } for r in fda_res["results"]])
+                df_fda_filtered = apply_column_filters(df_fda_filter, filter_key_prefix="fda")
+                filtered_records = [fda_res["results"][i] for i in df_fda_filtered.index]
+
+                # Create dataframe with clickable links
+                df_fda_display = []
+                for r in filtered_records:
+                    k_num = r.get("k_number", "")
+                    device = r.get("device_name", "")
+                    applicant = r.get("applicant", "")
+                    clearance = r.get("decision_date", "")
+                    dev_class = r.get("openfda", {}).get("device_class", "")
+                    
+                    pmn_link = get_fda_pmn_link(k_num)
+                    pdf_link = get_fda_pdf_link(k_num)
+                    
+                    # Build HTML with clickable links
+                    links_html = ""
+                    if pmn_link:
+                        links_html += f'<a href="{pmn_link}" target="_blank" class="fda-link-btn fda-pmn-link">📋 View PMN</a>'
+                    if pdf_link:
+                        links_html += f'<a href="{pdf_link}" target="_blank" class="fda-link-btn fda-pdf-link">📄 PDF Summary</a>'
+                    
+                    content_html = f"""
+                    <div class="fda-result-row">
+                        <div class="fda-result-content">
+                            <div style="font-weight: 700; color: #0f172a; margin-bottom: 4px;">
+                                <span style="background: #0284c7; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">K{k_num.replace('K', '')}</span>
+                                {device}
+                            </div>
+                            <div style="color: #475569; font-size: 13px; margin-bottom: 4px;">
+                                <b>Applicant:</b> {applicant}
+                            </div>
+                            <div style="color: #64748b; font-size: 12px; display: flex; gap: 16px;">
+                                <span><b>Clearance:</b> {clearance}</span>
+                                <span><b>Class:</b> {dev_class}</span>
+                            </div>
+                        </div>
+                        <div class="fda-result-links">
+                            {links_html}
+                        </div>
+                    </div>
+                    """
+                    df_fda_display.append(content_html)
+                
+                # Download button
+                df_fda_export = df_fda_filtered
+                if df_fda_filtered.empty:
+                    st.info("No FDA records match the selected column filters.")
+
+                st.download_button(
+                    label="📥 Download FDA 510(k) Results (.xlsx)",
+                    data=to_excel_bytes(df_fda_export, sheet_name="FDA_510k"),
+                    file_name=f"FDA_510k_{device_name}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_fda"
+                )
+                st.write("")
+                
+                # Display results with clickable links
+                for html_result in df_fda_display:
+                    st.markdown(html_result, unsafe_allow_html=True)
+            elif fda_res.get("status") == "error":
+                st.error(f"FDA search could not finish: {fda_res.get('message', 'Unknown error')}. Please run the search again.")
+            else:
+                st.warning("No FDA 510(k) records matched.")
+
             st.write("")
+
+    with tab_risk:
+        if jurisdiction in ["Dual (US FDA + CDSCO)", "CDSCO India Only"]:
+            # STEP 1: Risk Classification
+            st.markdown("#### Step 1: Risk Classification Lookup")
+            st.caption("Covers: ListOfApprovedRiskDevice + ListOfApprovedRiskNSSMDevice")
+
+            df_risk = risk_payload["data"]
+            if not df_risk.empty:
+                if search_scope == "Product Name Only":
+                    risk_cols = ["medical_device_name"]
+                elif search_scope == "Company Name Only":
+                    risk_cols = ["device_category"]
+                else:
+                    risk_cols = ["medical_device_name", "intended_use", "device_category"]
+
+                if term:
+                    risk_matches = robust_dataframe_search(
+                        df_risk, term, risk_cols, ai_mode=ai_search_toggle, match_mode=selected_mode
+                    )
+                else:
+                    risk_matches = df_risk.copy()
+
+                if selected_categories and "device_category" in risk_matches.columns:
+                    sel_clean = set(c.strip() for c in selected_categories)
+                    risk_matches = risk_matches[risk_matches["device_category"].astype(str).str.strip().isin(sel_clean)]
+
+                if 'source_portal' in risk_matches.columns:
+                    risk_matches['Classification Source Portal'] = risk_matches['source_portal'].apply(
+                        lambda x: 'Approved Device Class A (NSNM) Details' if 'NSSM' in str(x) else 'Approved Risk Device List'
+                    )
+                else:
+                    risk_matches['Classification Source Portal'] = 'Approved Risk Device List'
+
+                st.markdown(f"""
+                <div class='audit-trace'>
+                    📊 Total Records: {len(df_risk):,} | Matches Found: {len(risk_matches):,}
+                </div>
+                """, unsafe_allow_html=True)
+
+                if not risk_matches.empty:
+                    df_risk_disp = risk_matches[[
+                        "medical_device_name", "device_category", "risk_classification_under_mdr_2017", "intended_use", "Classification Source Portal"
+                    ]].rename(columns={
+                        "medical_device_name": "Product Name",
+                        "device_category": "Category",
+                        "risk_classification_under_mdr_2017": "Risk Class",
+                        "intended_use": "Intended Use"
+                    })
+
+                    # Apply per-column filters
+                    df_risk_filtered = apply_column_filters(df_risk_disp, filter_key_prefix="risk")
+                    
+                    st.download_button(
+                        label="📥 Download Risk Classification Results (.xlsx)",
+                        data=to_excel_bytes(df_risk_filtered, sheet_name="CDSCO_Risk"),
+                        file_name=f"CDSCO_Risk_{device_name}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="dl_cdsco_risk"
+                    )
+
+                    st.dataframe(df_risk_filtered, use_container_width=True)
+                else:
+                    st.warning(f"No CDSCO classification matches found for '{device_name}'.")
+
+
+    with tab_approved:
+        if jurisdiction in ["Dual (US FDA + CDSCO)", "CDSCO India Only"]:
+            # STEP 2: Manufacturers & Importers
+            st.markdown("#### Step 2: Available Manufacturers & Importers")
             
-            # Display results with clickable links
-            for html_result in df_fda_display:
-                st.markdown(html_result, unsafe_allow_html=True)
-        elif fda_res.get("status") == "error":
-            st.error(f"FDA search could not finish: {fda_res.get('message', 'Unknown error')}. Please run the search again.")
-        else:
-            st.warning("No FDA 510(k) records matched.")
+            df_app = approved_payload["data"]
+            if not df_app.empty:
+                if search_scope == "Product Name Only":
+                    app_cols = ["devicename", "brandname", "modelname"]
+                elif search_scope == "Company Name Only":
+                    app_cols = ["address", "premises_add"]
+                else:
+                    app_cols = ["devicename", "brandname", "modelname", "str_intended_use", "address"]
 
-        st.write("")
+                if term:
+                    app_matches = robust_dataframe_search(
+                        df_app, term, app_cols, ai_mode=ai_search_toggle, match_mode=selected_mode
+                    )
+                else:
+                    app_matches = df_app.copy()
 
-    # CDSCO SECTION
-    if jurisdiction in ["Dual (US FDA + CDSCO)", "CDSCO India Only"]:
-        st.markdown("<div class='card card-green'><h3 style='color:#059669;margin:0'>🇮🇳 CDSCO India — Regulatory Intelligence</h3></div>", unsafe_allow_html=True)
+                if cdsco_role == "Manufacturer Only":
+                    app_matches = app_matches[app_matches["role"] == "Manufacturer"]
+                elif cdsco_role == "Importer Only":
+                    app_matches = app_matches[app_matches["role"] == "Importer"]
 
-        term = device_name.strip()
-        app_term = applicant_name.strip()
+                st.markdown(f"""
+                <div class='results-info'>
+                    📊 Found: <b>{len(app_matches):,} total registrations</b> | Displaying all results below
+                </div>
+                """, unsafe_allow_html=True)
 
-        # STEP 1: Risk Classification
-        st.markdown("#### Step 1: Risk Classification Lookup")
-        st.caption("Covers: ListOfApprovedRiskDevice + ListOfApprovedRiskNSSMDevice")
+                if not app_matches.empty:
+                    disp_cols = ["devicename", "role", "address", "str_licence_no", "classname", "brandname"]
+                    df_app_disp = app_matches[[c for c in disp_cols if c in app_matches.columns]].rename(columns={
+                        "devicename": "Device Name",
+                        "role": "Role",
+                        "address": "Company Name & Address",
+                        "str_licence_no": "License No.",
+                        "classname": "Class",
+                        "brandname": "Brand Name"
+                    })
 
-        df_risk = risk_payload["data"]
-        if not df_risk.empty:
-            if search_scope == "Product Name Only":
-                risk_cols = ["medical_device_name"]
-            elif search_scope == "Company Name Only":
-                risk_cols = ["device_category"]
-            else:
-                risk_cols = ["medical_device_name", "intended_use", "device_category"]
+                    # Apply per-column filters
+                    df_app_filtered = apply_column_filters(df_app_disp, filter_key_prefix="approved")
+                    
+                    st.download_button(
+                        label="📥 Download Approved Devices (.xlsx)",
+                        data=to_excel_bytes(df_app_filtered, sheet_name="Approved_Devices"),
+                        file_name=f"CDSCO_Devices_{device_name}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="dl_cdsco_app"
+                    )
 
-            if term:
-                risk_matches = robust_dataframe_search(
-                    df_risk, term, risk_cols, ai_mode=ai_search_toggle, match_mode=selected_mode
-                )
-            else:
-                risk_matches = df_risk.copy()
-
-            if selected_categories and "device_category" in risk_matches.columns:
-                sel_clean = set(c.strip() for c in selected_categories)
-                risk_matches = risk_matches[risk_matches["device_category"].astype(str).str.strip().isin(sel_clean)]
-
-            if 'source_portal' in risk_matches.columns:
-                risk_matches['Classification Source Portal'] = risk_matches['source_portal'].apply(
-                    lambda x: 'Approved Device Class A (NSNM) Details' if 'NSSM' in str(x) else 'Approved Risk Device List'
-                )
-            else:
-                risk_matches['Classification Source Portal'] = 'Approved Risk Device List'
-
-            st.markdown(f"""
-            <div class='audit-trace'>
-                📊 Total Records: {len(df_risk):,} | Matches Found: {len(risk_matches):,}
-            </div>
-            """, unsafe_allow_html=True)
-
-            if not risk_matches.empty:
-                df_risk_disp = risk_matches[[
-                    "medical_device_name", "device_category", "risk_classification_under_mdr_2017", "intended_use", "Classification Source Portal"
-                ]].rename(columns={
-                    "medical_device_name": "Product Name",
-                    "device_category": "Category",
-                    "risk_classification_under_mdr_2017": "Risk Class",
-                    "intended_use": "Intended Use"
-                })
-
-                # Apply per-column filters
-                df_risk_filtered = apply_column_filters(df_risk_disp, filter_key_prefix="risk")
-                
-                st.download_button(
-                    label="📥 Download Risk Classification Results (.xlsx)",
-                    data=to_excel_bytes(df_risk_filtered, sheet_name="CDSCO_Risk"),
-                    file_name=f"CDSCO_Risk_{device_name}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="dl_cdsco_risk"
-                )
-
-                st.dataframe(df_risk_filtered, use_container_width=True)
-            else:
-                st.warning(f"No CDSCO classification matches found for '{device_name}'.")
-
-        st.markdown("---")
-
-        # STEP 2: Manufacturers & Importers
-        st.markdown("#### Step 2: Available Manufacturers & Importers")
-        
-        df_app = approved_payload["data"]
-        if not df_app.empty:
-            if search_scope == "Product Name Only":
-                app_cols = ["devicename", "brandname", "modelname"]
-            elif search_scope == "Company Name Only":
-                app_cols = ["address", "premises_add"]
-            else:
-                app_cols = ["devicename", "brandname", "modelname", "str_intended_use", "address"]
-
-            if term:
-                app_matches = robust_dataframe_search(
-                    df_app, term, app_cols, ai_mode=ai_search_toggle, match_mode=selected_mode
-                )
-            else:
-                app_matches = df_app.copy()
-
-            if cdsco_role == "Manufacturer Only":
-                app_matches = app_matches[app_matches["role"] == "Manufacturer"]
-            elif cdsco_role == "Importer Only":
-                app_matches = app_matches[app_matches["role"] == "Importer"]
-
-            st.markdown(f"""
-            <div class='results-info'>
-                📊 Found: <b>{len(app_matches):,} total registrations</b> | Displaying all results below
-            </div>
-            """, unsafe_allow_html=True)
-
-            if not app_matches.empty:
-                disp_cols = ["devicename", "role", "address", "str_licence_no", "classname", "brandname"]
-                df_app_disp = app_matches[[c for c in disp_cols if c in app_matches.columns]].rename(columns={
-                    "devicename": "Device Name",
-                    "role": "Role",
-                    "address": "Company Name & Address",
-                    "str_licence_no": "License No.",
-                    "classname": "Class",
-                    "brandname": "Brand Name"
-                })
-
-                # Apply per-column filters
-                df_app_filtered = apply_column_filters(df_app_disp, filter_key_prefix="approved")
-                
-                st.download_button(
-                    label="📥 Download Approved Devices (.xlsx)",
-                    data=to_excel_bytes(df_app_filtered, sheet_name="Approved_Devices"),
-                    file_name=f"CDSCO_Devices_{device_name}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="dl_cdsco_app"
-                )
-
-                # Display all results with scrolling
-                st.dataframe(df_app_filtered, use_container_width=True, height=600)
-            else:
-                st.info(f"No approved devices matched '{device_name}'.")
+                    # Display all results with scrolling
+                    st.dataframe(df_app_filtered, use_container_width=True, height=600)
+                else:
+                    st.info(f"No approved devices matched '{device_name}'.")
