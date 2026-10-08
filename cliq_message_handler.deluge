@@ -1,0 +1,32 @@
+// Paste into the Zoho Cliq bot's Message Handler.
+// Replace the URL and API key. Keep the key private; prefer a Zoho Connection
+// with an X-API-Key header for shared/production installations.
+payload = Map();
+payload.put("message", message);
+headers = Map();
+headers.put("Content-Type", "application/json");
+headers.put("X-API-Key", "REPLACE_WITH_YOUR_SECRET_KEY");
+response = Map();
+try
+{
+    result = invokeurl
+    [
+        url : "https://YOUR_API_HOST/chat"
+        type : POST
+        body : payload.toString()
+        headers : headers
+    ];
+    if(result.get("text") != null)
+    {
+        response.put("text", result.get("text"));
+    }
+    else
+    {
+        response.put("text", "Research service unavailable. Check API authentication and deployment.");
+    }
+}
+catch (e)
+{
+    response.put("text", "Research service did not respond. Please try again shortly.");
+}
+return response;
