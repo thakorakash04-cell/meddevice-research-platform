@@ -10,10 +10,11 @@ import api
 
 class BotTests(unittest.TestCase):
     def setUp(self):
-        self.environment = patch.dict(os.environ, {"CLIQ_API_KEY": "test-secret", "STREAMLIT_APP_URL": ""})
+        self.environment = patch.dict(os.environ, {"CLIQ_API_KEY": "test-secret", "STREAMLIT_APP_URL": "", "GEMINI_API_KEY": ""})
         self.environment.start()
         self.client = TestClient(api.app)
         self.headers = {"X-API-Key": "test-secret"}
+        api.CONTEXT.clear()
 
     def tearDown(self):
         self.environment.stop()
@@ -72,6 +73,64 @@ class BotTests(unittest.TestCase):
         self.assertEqual(self.send("risk unknown").json()["total"], 0)
         load.return_value = pd.DataFrame({"unexpected": ["value"]})
         self.assertEqual(self.send("risk laser").status_code, 503)
+
+    @patch("api.run_search")
+    @patch("api.gemini")
+    def test_natural_search_followup_and_isolation(self, gemini, search):
+        import json
+        search.return_value = {"text": "K123456: Catheter. Applicant Abbott.", "total": 1}
+        initial = {"action": "search", "tool": "fda", "device": "catheter", "applicant": ""}
+        filtered = dict(initial, applicant="Abbott")
+        gemini.side_effect = [json.dumps(initial), "One catheter clearance.", json.dumps(filtered), "Abbott match.", json.dumps(initial), "New search."]
+        def send(message, user="alice"):
+            return self.client.post("/chat", json={"message": message, "user_id": user, "chat_id": "chat1"}, headers=self.headers)
+        self.assertIn("AI interpretation", send("Find FDA-cleared catheters").json()["text"])
+        send("Only Abbott")
+        router_input = json.loads(gemini.call_args_list[2].args[0])
+        self.assertEqual(router_input["previous_plan"]["device"], "catheter")
+        self.assertEqual(search.call_args.args[0].applicant, "Abbott")
+        send("Find FDA-cleared catheters", user="bob")
+        self.assertIsNone(json.loads(gemini.call_args_list[4].args[0])["previous_plan"])
+        send("reset")
+        self.assertNotIn(("alice", "chat1"), api.CONTEXT)
+
+    @patch("api.gemini")
+    def test_invalid_plan_and_no_context_explanation(self, gemini):
+        gemini.return_value = '{"action":"delete","tool":"fda","device":"laser"}'
+        self.assertIn("could not interpret", self.send("Find a laser").json()["text"])
+        gemini.return_value = '{"action":"explain","tool":"fda","device":"laser"}'
+        self.assertIn("search for a device first", self.send("Compare these").json()["text"])
+
+    @patch("api.requests.post")
+    def test_gemini_rest_auth_quota_and_blocked_output(self, post):
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "dummy-gemini-key"}):
+            response = Mock(status_code=429)
+            post.return_value = response
+            self.assertIn("quota", self.send("Find a laser").json()["text"])
+            response.status_code = 403
+            self.assertIn("access was denied", self.send("Find a laser").json()["text"])
+            response.status_code = 200
+            response.json.return_value = {"candidates": []}
+            self.assertIn("could not respond", self.send("Find a laser").json()["text"])
+            self.assertEqual(post.call_args.kwargs["headers"]["x-goog-api-key"], "dummy-gemini-key")
+            self.assertNotIn("dummy-gemini-key", post.call_args.args[0])
+
+    @patch("api.run_search")
+    @patch("api.gemini")
+    def test_summary_failure_preserves_records(self, gemini, search):
+        gemini.side_effect = ['{"action":"search","tool":"risk","device":"laser"}', RuntimeError("timeout")]
+        search.return_value = {"text": "Risk class: C", "total": 1}
+        self.assertEqual(self.send("Class of laser?").json()["text"], "Risk class: C")
+
+    def test_context_expiry_and_no_anonymous_memory(self):
+        plan = api.SearchPlan(action="search", tool="risk", device="laser")
+        anonymous = api.ChatRequest(message="risk laser")
+        api.remember_context(anonymous, plan, {"text": "result", "total": 1})
+        self.assertEqual(len(api.CONTEXT), 0)
+        identified = api.ChatRequest(message="risk laser", user_id="a", chat_id="b")
+        api.remember_context(identified, plan, {"text": "result", "total": 1})
+        api.CONTEXT[("a", "b")]["time"] -= api.CONTEXT_TTL + 1
+        self.assertEqual(api.get_context(identified), {})
 
 
 if __name__ == "__main__":
