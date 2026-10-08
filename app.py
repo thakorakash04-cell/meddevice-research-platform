@@ -252,7 +252,7 @@ def sha256(b: bytes) -> str:
 
 def to_excel_bytes(df, sheet_name="Results"):
     output = io.BytesIO()
-    export_df = df.head(10000)
+    export_df = df
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         export_df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
     return output.getvalue()
@@ -294,7 +294,7 @@ def expand_terms(query_str, enable_synonyms=True):
             for k, syn_list in SYNONYMS.items():
                 if k in w or w in k:
                     terms.extend(syn_list)
-    return list(set(terms))
+    return list(dict.fromkeys(terms))
 
 def robust_dataframe_search(df, query, target_columns, ai_mode=True, match_mode='all_words'):
     if df.empty or not query.strip():
@@ -459,14 +459,15 @@ def get_cdsco_sync_metadata():
 
 sync_meta = get_cdsco_sync_metadata()
 
-def search_us_fda(device_query: str, applicant: str, limit=20, ai_mode=True):
+@st.cache_data(ttl=900, show_spinner=False)
+def search_us_fda(device_query: str, applicant: str, ai_mode=True):
     search_parts = []
     if device_query.strip():
         dev_clean = device_query.strip()
         words = re.findall(r'\w+', dev_clean)
         if ai_mode:
             terms = expand_terms(dev_clean, enable_synonyms=True)
-            term_str = " OR ".join([f'"{t}"' for t in terms[:6]])
+            term_str = " OR ".join([f'"{t}"' for t in terms])
             search_parts.append(f"device_name:({term_str})")
         else:
             if len(words) > 1:
@@ -485,17 +486,58 @@ def search_us_fda(device_query: str, applicant: str, limit=20, ai_mode=True):
             search_parts.append(f'applicant:"{app_clean}"')
 
     raw_query = " AND ".join(search_parts)
-    url = f"https://api.fda.gov/device/510k.json?search={quote(raw_query)}&limit={limit}"
+    url = f"https://api.fda.gov/device/510k.json?search={quote(raw_query)}&limit=1000&sort=k_number:asc"
+    results = []
+    total = 0
+    digest = hashlib.sha256()
+    visited = set()
+    next_url = url
     try:
-        resp = requests.get(url, timeout=15)
-        h = sha256(resp.content)
-        if resp.status_code == 200:
-            data = resp.json()
-            return {"status":"success","hash":h,"url":url,"query":raw_query,"timestamp":datetime.now().isoformat(),
-                    "total":data.get("meta",{}).get("results",{}).get("total",0),"results":data.get("results",[])}
-        return {"status":"error","message":f"HTTP {resp.status_code}","hash":h,"url":url,"timestamp":datetime.now().isoformat()}
+        with requests.Session() as session:
+            adapter = requests.adapters.HTTPAdapter(
+                max_retries=urllib3.util.Retry(
+                    total=4, backoff_factor=1,
+                    status_forcelist=[429, 500, 502, 503, 504],
+                    allowed_methods=["GET"], respect_retry_after_header=True
+                )
+            )
+            session.mount("https://", adapter)
+            while next_url:
+                if next_url in visited:
+                    raise ValueError("FDA pagination repeated a page; please retry.")
+                visited.add(next_url)
+                resp = session.get(next_url, timeout=60)
+                if resp.status_code == 404 and not results:
+                    error = resp.json().get("error", {})
+                    if error.get("code") == "NOT_FOUND":
+                        return {"status": "success", "hash": sha256(resp.content),
+                                "url": url, "query": raw_query,
+                                "timestamp": datetime.now().isoformat(),
+                                "total": 0, "results": []}
+                resp.raise_for_status()
+                digest.update(resp.content)
+                data = resp.json()
+                total = data.get("meta", {}).get("results", {}).get("total", total)
+                page = data.get("results", [])
+                if not page and len(results) < total:
+                    raise ValueError("FDA returned an empty page before all records loaded.")
+                results.extend(page)
+                # Follow openFDA search-after links, including searches over 26,000 hits.
+                next_url = next(
+                    (link["url"] for relation, link in resp.links.items()
+                     if relation.lower() == "next"), None
+                )
+                if next_url and not next_url.startswith("https://api.fda.gov/"):
+                    raise ValueError("Unexpected FDA pagination URL.")
+        if len(results) != total:
+            raise ValueError(f"Only {len(results):,} of {total:,} FDA records loaded. Please retry.")
+        return {"status": "success", "hash": digest.hexdigest(), "url": url,
+                "query": raw_query, "timestamp": datetime.now().isoformat(),
+                "total": total, "results": results}
     except Exception as e:
-        return {"status":"error","message":str(e)}
+        return {"status": "error", "message": str(e), "total": total,
+                "loaded": len(results), "url": url}
+
 
 # ─── SIDEBAR ──────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -578,9 +620,11 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
     # US FDA SECTION
     if jurisdiction in ["Dual (US FDA + CDSCO)", "US FDA Only"]:
         st.markdown("<div class='card card-blue'><h3 style='color:#0284c7;margin:0'>🇺🇸 US FDA — 510(k) Premarket Clearances</h3></div>", unsafe_allow_html=True)
-        fda_res = search_us_fda(device_name, applicant_name, limit=20, ai_mode=ai_search_toggle)
+        with st.spinner("Loading all matching FDA 510(k) records..."):
+            fda_res = search_us_fda(device_name, applicant_name, ai_mode=ai_search_toggle)
 
         if fda_res.get("status") == "success" and fda_res["results"]:
+            st.info(f"Loaded {len(fda_res['results']):,} of {fda_res['total']:,} matching FDA 510(k) records. The Excel download includes all loaded records.")
             st.markdown(f"""
             <div class='audit-trace'>
                 🔐 openFDA Hash: <code>{fda_res['hash'][:16]}...</code><br>
@@ -651,6 +695,8 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
             # Display results with clickable links
             for html_result in df_fda_display:
                 st.markdown(html_result, unsafe_allow_html=True)
+        elif fda_res.get("status") == "error":
+            st.error(f"FDA search could not finish: {fda_res.get('message', 'Unknown error')}. Please run the search again.")
         else:
             st.warning("No FDA 510(k) records matched.")
 
