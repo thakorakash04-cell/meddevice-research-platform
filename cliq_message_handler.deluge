@@ -3,6 +3,12 @@
 // with an X-API-Key header for shared/production installations.
 payload = Map();
 payload.put("message", message);
+// IDs keep each user's follow-up searches separate. No names/emails are sent.
+if(user.get("id") != null && chat.get("id") != null)
+{
+    payload.put("user_id", user.get("id").toString());
+    payload.put("chat_id", chat.get("id").toString());
+}
 headers = Map();
 headers.put("Content-Type", "application/json");
 headers.put("X-API-Key", "REPLACE_WITH_YOUR_SECRET_KEY");
