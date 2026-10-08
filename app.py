@@ -486,7 +486,7 @@ def search_us_fda(device_query: str, applicant: str, ai_mode=True):
             search_parts.append(f'applicant:"{app_clean}"')
 
     raw_query = " AND ".join(search_parts)
-    url = f"https://api.fda.gov/device/510k.json?search={quote(raw_query)}&limit=1000&sort=k_number:asc"
+    url = f"https://api.fda.gov/device/510k.json?search={quote(raw_query)}&limit=1000&sort=decision_date:asc"
     results = []
     total = 0
     digest = hashlib.sha256()
@@ -522,6 +522,8 @@ def search_us_fda(device_query: str, applicant: str, ai_mode=True):
                 if not page and len(results) < total:
                     raise ValueError("FDA returned an empty page before all records loaded.")
                 results.extend(page)
+                if len(results) >= total:
+                    break
                 # Follow openFDA search-after links, including searches over 26,000 hits.
                 next_url = next(
                     (link["url"] for relation, link in resp.links.items()
