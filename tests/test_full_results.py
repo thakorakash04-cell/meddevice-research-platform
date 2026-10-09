@@ -1,6 +1,9 @@
 import csv
 import io
 import unittest
+import tempfile
+import threading
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pandas as pd
@@ -14,9 +17,47 @@ class CompleteResultsTests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(api.app)
 
+    def test_real_parquet_scan_across_batches_preserves_all_matches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            df = pd.DataFrame([{"devicename": "laser ablation system", "role": "Manufacturer" if i % 2 == 0 else "Importer", "address": "Company", "str_licence_no": str(i)} for i in range(2100)])
+            df.to_parquet(Path(directory) / "cdsco_approved_devices.parquet", row_group_size=700)
+            with patch.object(api, "BASE_DIR", Path(directory)):
+                answer = api.cdsco_search("manufacturer", "laser ablation system")
+            self.assertEqual(answer["total"], 1050)
+            token = answer["results_url"].rsplit("/", 1)[-1]
+            content = self.client.get(f"/results/{token}/download").text.lstrip("\ufeff")
+            rows = list(csv.DictReader(io.StringIO(content)))
+            self.assertEqual(len(rows), 1050)
+            self.assertEqual(rows[-1]["str_licence_no"], "2098")
+
+    def test_slow_scan_returns_link_and_rejects_concurrent_scan(self):
+        ready = threading.Event()
+        done = threading.Event()
+        def batches(filename):
+            try:
+                ready.wait(5)
+                yield pd.DataFrame([{"medical_device_name": "laser"}])
+            finally:
+                done.set()
+        with patch("api.load_database", side_effect=batches):
+            try:
+                answer = api.cdsco_search("risk", "laser")
+                self.assertIsNone(answer["total"])
+                self.assertIn("results_url", answer)
+                self.assertIn("already running", api.cdsco_search("risk", "laser")["text"])
+                request = api.ChatRequest(message="risk laser", user_id="pending-user", chat_id="pending-chat")
+                api.remember_context(request, api.SearchPlan(action="search", tool="risk", device="laser"), answer)
+                self.assertEqual(api.get_context(request)["results_url"], answer["results_url"])
+            finally:
+                ready.set()
+                done.wait(5)
+        # Wait until scan releases its admission slot before subsequent tests.
+        self.assertTrue(api.CDSCO_SLOT.acquire(timeout=5))
+        api.CDSCO_SLOT.release()
+
     def test_all_cdsco_rows_beyond_five_and_complete_csv(self):
         df = pd.DataFrame([{"medical_device_name": f"Laser {i}", "intended_use": "surgery", "risk_classification_under_mdr_2017": "C"} for i in range(120)])
-        with patch("api.load_database", return_value=df):
+        with patch("api.load_database", return_value=[df]):
             answer = api.cdsco_search("risk", "laser")
         token = answer["results_url"].rsplit("/", 1)[-1]
         first = self.client.get(f"/results/{token}/data").json()
