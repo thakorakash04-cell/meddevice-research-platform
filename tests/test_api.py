@@ -33,14 +33,14 @@ class BotTests(unittest.TestCase):
         self.assertEqual(self.send("x" * 501).status_code, 422)
 
     @patch("api.requests.get")
-    def test_fda_bounded_search_and_applicant(self, get):
+    def test_fda_full_page_and_applicant(self, get):
         response = Mock(status_code=200)
         response.json.return_value = {"meta": {"results": {"total": 101}}, "results": [{"k_number": "K123456", "device_name": "Catheter", "applicant": "Abbott", "decision_date": "20260101"}]}
         get.return_value = response
         result = self.send("fda catheter | Abbott").json()
         self.assertEqual(result["total"], 101)
         self.assertIn("K123456", result["text"])
-        self.assertEqual(get.call_args.kwargs["params"]["limit"], 5)
+        self.assertEqual(get.call_args.kwargs["params"]["limit"], 1000)
         self.assertEqual(get.call_args.kwargs["params"]["search"], 'device_name:"catheter" AND applicant:"Abbott"')
 
     @patch("api.requests.get")
