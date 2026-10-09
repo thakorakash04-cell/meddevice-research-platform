@@ -35,7 +35,7 @@ Use an always-on instance for dependable chat responses. Sleeping services
 can take too long to start for Zoho's synchronous invokeURL limit (40 seconds).
 Do not deploy this API using Streamlit's start command.
 The two CDSCO Parquet files must be present at the repository root.
-Database snapshots are cached until process restart. After daily GitHub data
+CDSCO snapshots are scanned in 512-row batches without caching the full database. After daily GitHub data
 updates, redeploy/restart this service to load the latest files; enable automatic
 deployment on commits if supported. `/health` checks process health only.
 
@@ -138,3 +138,17 @@ new searches arrive. At most two FDA background searches run concurrently and 30
 result jobs are retained per process. Use one API worker/instance. Regenerate a search
 if its link expires or the host restarts. CSV files open in Excel; no software changes
 or PowerShell are required.
+
+## CDSCO search memory and restart fix
+
+CDSCO searches now scan Parquet in 512-row batches, using one scan at a time and
+writing matches directly to temporary SQLite storage. No complete CDSCO dataframe
+or complete result JSON is retained in RAM. If a scan exceeds two seconds, chat
+returns an All records link while the scan continues. The page displays scanned
+rows and matches; the final total and complete CSV appear when the scan finishes.
+Short searches still return a bounded preview in chat. Longer searches should be
+viewed at the results link; send show all records to retrieve it again.
+
+Logs include CDSCO scan started/completed/failed without recording the question or
+API keys. If Render still restarts, check Events for the reason (e.g. memory limit,
+redeploy or host restart). HTTP health checks alone do not establish the cause.
