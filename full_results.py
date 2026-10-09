@@ -76,7 +76,7 @@ def collect_fda(job, next_url):
         SLOTS.release()
 
 
-def save_results(rows, total, next_url=None, source="CDSCO"):
+def save_results(rows, total, next_url=None, source="CDSCO", defer=False):
     with LOCK:
         for token, old in list(JOBS.items()):
             if old["status"] != "loading" and time.monotonic() - old["created"] > TTL:
@@ -95,7 +95,7 @@ def save_results(rows, total, next_url=None, source="CDSCO"):
         add_rows(job, rows)
         if pending:
             threading.Thread(target=collect_fda, args=(job, next_url), daemon=True).start()
-        else:
+        elif not defer:
             finish(job)
     return token
 
@@ -108,7 +108,7 @@ def rows_page(job, offset, limit):
 @router.get("/results/{token}/data")
 def data(token: str, offset: int = Query(0, ge=0)):
     job = get_job(token)
-    return JSONResponse({"status": job["status"], "total": job["total"], "loaded": job["loaded"], "error": job.get("error"), "rows": rows_page(job, offset, 100)}, headers=HEADERS)
+    return JSONResponse({"status": job["status"], "total": job["total"], "loaded": job["loaded"], "scanned": job.get("scanned"), "error": job.get("error"), "rows": rows_page(job, offset, 100)}, headers=HEADERS)
 
 
 def csv_cell(value):
@@ -150,7 +150,7 @@ PAGE = '''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport"
 <script>let offset=0,loaded=0;const base=location.pathname;
 document.getElementById('prev').onclick=()=>{offset=Math.max(0,offset-100);refresh()};document.getElementById('next').onclick=()=>{if(offset+100<loaded){offset+=100;refresh()}};
 async function refresh(){try{let r=await fetch(base+'/data?offset='+offset,{cache:'no-store'});if(!r.ok)throw Error('Results expired or unavailable. Run your search again.');let d=await r.json();loaded=d.loaded;
-document.getElementById('status').textContent=d.error||('Loaded '+d.loaded+' of '+d.total+' records — '+d.status);
+document.getElementById('status').textContent=d.error||(d.total===null?('Searching: '+(d.scanned||0)+' records scanned, '+d.loaded+' matches found'):('Loaded '+d.loaded+' of '+d.total+' records — '+d.status));
 let dl=document.getElementById('download');dl.hidden=d.status!=='complete';dl.href=base+'/download';document.getElementById('prev').disabled=offset===0;document.getElementById('next').disabled=offset+100>=loaded;
 document.getElementById('range').textContent=d.rows.length?((offset+1)+'–'+(offset+d.rows.length)):'No records';
 let cols=[...new Set(d.rows.flatMap(x=>Object.keys(x)))],table=document.createElement('table'),head=document.createElement('tr');for(let c of cols){let th=document.createElement('th');th.textContent=c;head.append(th)}table.append(head);
