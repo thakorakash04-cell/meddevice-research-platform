@@ -21,14 +21,43 @@ try
         type : POST
         body : payload.toString()
         headers : headers
+        detailed : true
     ];
-    if(result.get("text") != null)
+    code = result.get("responseCode");
+    if(code == 401)
     {
-        response.put("text", result.get("text"));
+        response.put("text", "Authentication failed (401). The X-API-Key in this handler must exactly match CLIQ_API_KEY in Render. This is not your Gemini key.");
+    }
+    else if(code == 404 || code == 405)
+    {
+        response.put("text", "API address incorrect (" + code + "). Use your Render service URL ending in /chat.");
+    }
+    else if(code == 502 || code == 504)
+    {
+        response.put("text", "Render service is starting or unavailable (" + code + "). Open /health, wait for it to respond, then retry.");
     }
     else
     {
-        response.put("text", "Research service unavailable. Check API authentication and deployment.");
+        try
+        {
+            body = result.get("responseText").toString().toMap();
+            if(body.get("text") != null)
+            {
+                response.put("text", body.get("text"));
+            }
+            else if(body.get("detail") != null)
+            {
+                response.put("text", "Research API error (" + code + "): " + body.get("detail").toString());
+            }
+            else
+            {
+                response.put("text", "Unexpected API response (" + code + "). Check the Render deployment and /chat URL.");
+            }
+        }
+        catch (parse_error)
+        {
+            response.put("text", "Research API returned a non-JSON response (" + code + "). Check Render Logs and confirm the /chat URL.");
+        }
     }
 }
 catch (e)
