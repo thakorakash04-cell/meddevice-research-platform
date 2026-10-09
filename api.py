@@ -7,7 +7,7 @@ import time
 import threading
 from collections import OrderedDict
 from typing import Literal
-from functools import lru_cache
+import logging
 from pathlib import Path
 from contextvars import ContextVar
 
@@ -19,7 +19,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from research_engine import robust_dataframe_search, get_fda_pmn_link
-from full_results import router as results_router, save_results
+from full_results import router as results_router, save_results, get_job, add_rows, rows_page, finish
 
 app = FastAPI(title="MedDevice Cliq Bot", docs_url=None, redoc_url=None)
 app.include_router(results_router)
@@ -33,7 +33,6 @@ async def http_error(request, error):
 @app.exception_handler(RequestValidationError)
 async def input_error(request, error):
     return JSONResponse(status_code=422, content={"text": "Invalid chat input. Send a text message of 1–500 characters; check the Cliq Message Handler JSON fields."})
-
 PUBLIC_URL = ContextVar("public_url", default="")
 BASE_DIR = Path(__file__).resolve().parent
 HELP = "Ask naturally, for example: Find FDA-cleared photodynamic devices, or What is the CDSCO risk class of a diode laser? Follow up with Only Abbott or Only importers. Send reset for a new conversation. Commands: fda <device>, risk <device>, manufacturer <device>, importer <device>. FDA: add | applicant name to filter applicants. Use your Streamlit website for full searches and Excel downloads."
@@ -53,12 +52,14 @@ class ChatRequest(BaseModel):
     chat_id: str = Field(default="", max_length=200)
 
 
-@lru_cache(maxsize=2)
 def load_database(filename):
     path = BASE_DIR / filename
     if not path.is_file():
         raise HTTPException(503, "CDSCO database unavailable; check deployment files")
-    return pd.read_parquet(path)
+    import pyarrow.parquet as pq
+    with pq.ParquetFile(path, pre_buffer=False) as parquet:
+        for batch in parquet.iter_batches(batch_size=512, use_threads=False):
+            yield batch.to_pandas()
 
 
 def clean(value):
@@ -127,13 +128,15 @@ def fda_search(query):
     return complete_reply(f"FDA 510(k): {total:,} matches, newest first (keyword matching).", lines, records, total, next_url, "FDA 510(k)")
 
 
-def cdsco_search(command, query, applicant=""):
+CDSCO_SLOT = threading.BoundedSemaphore(1)
+SEARCH_LOG = logging.getLogger("uvicorn.error")
+
+
+def filter_cdsco_batch(df, command, query, applicant):
     if command == "risk":
-        df = load_database("cdsco_combined_risk.parquet")
         columns = ["medical_device_name", "intended_use", "device_category"]
         fields = [("Device", "medical_device_name"), ("Risk class", "risk_classification_under_mdr_2017"), ("Category", "device_category"), ("Intended use", "intended_use")]
     else:
-        df = load_database("cdsco_approved_devices.parquet")
         if "role" not in df.columns:
             raise HTTPException(503, "CDSCO role column unavailable")
         role = "Manufacturer" if command == "manufacturer" else "Importer"
@@ -146,16 +149,66 @@ def cdsco_search(command, query, applicant=""):
     matches = robust_dataframe_search(df, query, columns, ai_mode=False)
     if applicant:
         if command == "risk":
-            return reply("CDSCO risk classification records do not contain company names. Ask for manufacturers or importers instead.")
+            raise HTTPException(400, "Risk classification records do not contain company names.")
         company_columns = [c for c in ("address", "premises_add") if c in matches.columns]
         if not company_columns:
             raise HTTPException(503, "CDSCO company columns unavailable")
         matches = robust_dataframe_search(matches, applicant, company_columns, ai_mode=False)
+    return matches, fields
+
+
+def scan_cdsco(job, command, query, applicant):
+    SEARCH_LOG.info("CDSCO scan started: source=%s", command)
+    try:
+        filename = "cdsco_combined_risk.parquet" if command == "risk" else "cdsco_approved_devices.parquet"
+        job["scanned"] = 0
+        for df in load_database(filename):
+            matches, fields = filter_cdsco_batch(df, command, query, applicant)
+            job["fields"] = fields
+            add_rows(job, json.loads(matches.to_json(orient="records", date_format="iso")))
+            job["scanned"] += len(df)
+        job["total"] = job["loaded"]
+        finish(job)
+        SEARCH_LOG.info("CDSCO scan completed: scanned=%s matches=%s", job["scanned"], job["total"])
+    except Exception as error:
+        job["status"] = "error"
+        job["error"] = str(error.detail) if isinstance(error, HTTPException) else "CDSCO scan failed. Check Render logs; full download is disabled."
+        SEARCH_LOG.exception("CDSCO scan failed")
+    finally:
+        CDSCO_SLOT.release()
+
+
+def cdsco_search(command, query, applicant=""):
+    if not CDSCO_SLOT.acquire(blocking=False):
+        return reply("A CDSCO search is already running. Wait for its results page to finish, then retry.")
+    try:
+        token = save_results([], 0, source="CDSCO", defer=True)
+    except Exception:
+        CDSCO_SLOT.release()
+        raise
+    job = get_job(token)
+    job["total"] = None
+    worker = threading.Thread(target=scan_cdsco, args=(job, command, query, applicant), daemon=True)
+    worker.start()
+    worker.join(timeout=2)
+    if job["status"] == "error":
+        raise HTTPException(503, job["error"])
+    base = (os.environ.get("BOT_PUBLIC_URL") or os.environ.get("RENDER_EXTERNAL_URL") or PUBLIC_URL.get()).rstrip("/")
+    link = base + "/results/" + token
     lines = []
-    for _, row in matches.iterrows():
-        lines.append("\n".join(f"{label}: {clean(row.get(column))}" for label, column in fields))
-    rows = json.loads(matches.to_json(orient="records", date_format="iso"))
-    return complete_reply(f"CDSCO {command}: {len(matches):,} matching records (keyword matching).", lines, rows, len(matches))
+    if job["status"] == "complete":
+        lines.append(f"CDSCO {command}: {job['total']:,} matching records.")
+        length = 0
+        for row in rows_page(job, 0, 100):
+            entry = "\n".join(f"{label}: {clean(row.get(column))}" for label, column in job.get("fields", []))
+            if length + len(entry) > 5000:
+                break
+            lines.append(entry)
+            length += len(entry) + 2
+    else:
+        lines.append("Searching CDSCO records in the background. Open the results link to see progress and all matches.")
+    lines.append("All records: " + link + "\nBrowse every matching record and download the complete CSV once loading finishes.")
+    return {"text": "\n\n".join(lines), "total": job["total"], "results_url": link}
 
 
 @app.get("/health")
@@ -219,7 +272,7 @@ def get_context(request):
 
 def remember_context(request, plan, result):
     key = context_key(request)
-    if key is None or result.get("total") is None:
+    if key is None or (result.get("total") is None and not result.get("results_url")):
         return
     with CONTEXT_LOCK:
         CONTEXT[key] = {"time": time.monotonic(), "plan": plan.model_dump(), "result": result["text"].split("All records:")[0][:7000], "results_url": result.get("results_url")}
