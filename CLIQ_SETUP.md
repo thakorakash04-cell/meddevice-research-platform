@@ -2,8 +2,11 @@
 
 This bot supports natural-language research with Gemini, plus keyword commands.
 The existing Streamlit website continues to load all matching FDA results.
-The bot intentionally retrieves at most five FDA records in one request,
-and returns the total hit count. CDSCO queries use the repository's Parquet
+The bot removes the five-record cap. Small result sets appear entirely in chat.
+Every search supplies an All records link to a paged browser table and a complete
+CSV download. Larger FDA searches follow every openFDA next-page link in a
+background worker, outside the synchronous Cliq request. The page shows progress;
+a complete download is enabled only when loaded count equals total match count. CDSCO queries use the repository's Parquet
 snapshots. These are matching records, not independently verified regulatory
 advice; the manufacturer/importer commands reflect the recorded applicant role.
 
@@ -22,6 +25,8 @@ Set environment variables in the hosting dashboard:
 - `CLIQ_API_KEY`: generate a long random secret; use the same value in Cliq.
   A password-manager generator can create it entirely in your browser.
 - `STREAMLIT_APP_URL`: your existing HTTPS Streamlit app URL (optional).
+- `BOT_PUBLIC_URL`: optional public URL of this Render API (for example https://your-bot.onrender.com).
+  Links otherwise use RENDER_EXTERNAL_URL or the incoming request's base URL.
 - `GEMINI_API_KEY`: your Gemini API key. Keep it in Render only, never GitHub or Cliq.
 - `GEMINI_MODEL`: optional model override. Default: `gemini-3.5-flash-lite`.
   Choose a generateContent model available to your key if the default is unavailable.
@@ -86,8 +91,10 @@ IDs still support independent questions but do not retain follow-up context.
 
 Supported follow-ups include changing the company, changing to importer/manufacturer,
 and explaining/comparing the last displayed sample. This is not full transcript memory.
-Date/class filters, multi-source combined searches, full-result chat exports, and
-unrelated tasks are not supported; Gemini is instructed to explain or clarify scope.
+Date/class filters, multi-source combined searches and unrelated tasks are not supported;
+Gemini is instructed to explain or clarify scope. Full results are available through
+an All records link and CSV download. Send show all records or download all to
+retrieve the previous search link without another Gemini call.
 The website still provides complete results and downloads. Classifications are not
 independently inferred from AI knowledge. Gemini summaries are interpretations;
 raw source records are included for checking. No live web browsing by Gemini is enabled.
@@ -111,3 +118,23 @@ Official references:
 - https://render.com/docs/deploy-fastapi
 - https://www.zoho.com/cliq/help/platform/bot-messagehandler.html
 - https://www.zoho.com/deluge/help/webhook/invokeurl-api-task.html
+
+## Complete results upgrade
+
+Redeploy latest main on Render. The existing Cliq handler still works. No new key
+or hosting service is needed. If result links have the wrong host, set BOT_PUBLIC_URL
+to the Render service's full HTTPS URL (no /chat suffix).
+
+The bot limits only the chat preview length, not the result count. The table uses
+100 rows per page with Previous/Next and includes all source columns. Full FDA
+searches load asynchronously, using search-after/next links beyond skip limits.
+An incomplete/failed search is marked explicitly and cannot be downloaded as complete.
+The Gemini summary still refers only to the displayed preview.
+
+Result links act as private access tokens: anyone with the link can view its records.
+Keep them private. They expire after one hour or service restart/redeploy. Temporary
+SQLite files store results on Render, and completed expired jobs are removed when
+new searches arrive. At most two FDA background searches run concurrently and 30
+result jobs are retained per process. Use one API worker/instance. Regenerate a search
+if its link expires or the host restarts. CSV files open in Excel; no software changes
+or PowerShell are required.
