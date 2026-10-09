@@ -15,12 +15,25 @@ import pandas as pd
 import requests
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field, ValidationError
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 from research_engine import robust_dataframe_search, get_fda_pmn_link
 from full_results import router as results_router, save_results
 
 app = FastAPI(title="MedDevice Cliq Bot", docs_url=None, redoc_url=None)
 app.include_router(results_router)
+
+
+@app.exception_handler(HTTPException)
+async def http_error(request, error):
+    return JSONResponse(status_code=error.status_code, content={"text": str(error.detail), "detail": error.detail})
+
+
+@app.exception_handler(RequestValidationError)
+async def input_error(request, error):
+    return JSONResponse(status_code=422, content={"text": "Invalid chat input. Send a text message of 1–500 characters; check the Cliq Message Handler JSON fields."})
+
 PUBLIC_URL = ContextVar("public_url", default="")
 BASE_DIR = Path(__file__).resolve().parent
 HELP = "Ask naturally, for example: Find FDA-cleared photodynamic devices, or What is the CDSCO risk class of a diode laser? Follow up with Only Abbott or Only importers. Send reset for a new conversation. Commands: fda <device>, risk <device>, manufacturer <device>, importer <device>. FDA: add | applicant name to filter applicants. Use your Streamlit website for full searches and Excel downloads."
