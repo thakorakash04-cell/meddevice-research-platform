@@ -54,11 +54,11 @@ class BotTests(unittest.TestCase):
 
     @patch("api.load_database")
     def test_cdsco_role_and_all_word_filters(self, load):
-        load.return_value = pd.DataFrame([
+        load.return_value = [pd.DataFrame([
             {"devicename": "Balloon catheter", "role": "Manufacturer", "address": "Company A", "str_licence_no": "L1"},
             {"devicename": "Balloon catheter", "role": "Importer", "address": "Company B", "str_licence_no": "L2"},
             {"devicename": "Other catheter", "role": "Manufacturer", "address": "Company C"}
-        ])
+        ])]
         result = self.send("manufacturer balloon catheter").json()
         self.assertEqual(result["total"], 1)
         self.assertIn("Company A", result["text"])
@@ -68,10 +68,10 @@ class BotTests(unittest.TestCase):
 
     @patch("api.load_database")
     def test_risk_and_missing_schema(self, load):
-        load.return_value = pd.DataFrame([{"medical_device_name": "Diode laser", "risk_classification_under_mdr_2017": "C", "intended_use": "Surgery"}])
+        load.return_value = [pd.DataFrame([{"medical_device_name": "Diode laser", "risk_classification_under_mdr_2017": "C", "intended_use": "Surgery"}])]
         self.assertIn("Risk class: C", self.send("risk diode laser").json()["text"])
         self.assertEqual(self.send("risk unknown").json()["total"], 0)
-        load.return_value = pd.DataFrame({"unexpected": ["value"]})
+        load.return_value = [pd.DataFrame({"unexpected": ["value"]})]
         self.assertEqual(self.send("risk laser").status_code, 503)
 
     @patch("api.run_search")
