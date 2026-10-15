@@ -13,3 +13,5 @@ BOE only: administrator uploads, manual entry and calculation remain available. 
 Research tabs use a shared result-card layout. Filter results directly in column headers; there is no separate Filter Controls panel. Next/Previous navigate all loaded matches without limiting the search to the first 20. Source metadata and unfiltered administrator Excel downloads are under Source details. For filtered exports, use Export filtered CSV in the table toolbar.
 
 Validation: `python -m unittest discover -s tests -v`; frontend: `cd workspace_frontend` then `npm test`, `npm run check`, `npm run build`. DOM tests exercise pagination, cross-page filters/totals, full-window details, and role restrictions; live browser layout needs separate inspection.
+
+Startup imports now use an app-specific account package. After deployment, reboot the Streamlit app once to clear legacy helper modules. Existing Secrets, accounts and PostgreSQL table names are unchanged. Root workspace_auth/workspace_store modules remain compatibility imports.

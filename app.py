@@ -20,7 +20,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-from workspace_auth import require_workspace, admin_download, can
+from meddevice_accounts.auth import require_workspace, admin_download, can
 from workspace_ui import data_table, workspace_theme
 workspace_theme()
 workspace_store, workspace_actor, workspace_identity = require_workspace()
