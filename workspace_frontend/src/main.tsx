@@ -13,8 +13,20 @@ function Workspace({args}:{args:Args}){
 const root=createRoot(document.getElementById('root')!);
 const send=(type:string,extra:Record<string,unknown>)=>window.parent.postMessage({isStreamlitMessage:true,type,...extra},'*');
 let height=0;
-function fit(){let next=window.screen.availHeight-150;try{next=window.parent.innerHeight-90}catch{}next=Math.max(420,next);if(next!==height){height=next;send('streamlit:setFrameHeight',{height:next})}}
-window.addEventListener('message',e=>{if(e.source!==window.parent||e.data?.type!=='streamlit:render')return;const args=e.data.args as Args;setRole(args.role);root.render(<Workspace key={args.storageKey} args={args}/>);fit()});
+// Size the embedded frame for ten complete rows, independently of screen height.
+// A short viewport should scroll the page rather than squash the result table.
+function fit(){
+ const table=document.querySelector('.workspace-table');
+ const firstRows=Array.from(document.querySelectorAll('.gridtable tbody tr')).slice(0,10);
+ const rowHeight=firstRows.reduce((sum,row)=>sum+row.getBoundingClientRect().height,0);
+ const chrome=Array.from(document.querySelectorAll('.paneltitle,.gridtools,.gridtable thead,.pagination,.gridnote,.gridtable tfoot')).reduce((sum,el)=>sum+el.getBoundingClientRect().height,0);
+ const next=table&&rowHeight>0?Math.ceil(chrome+rowHeight+48):1320;
+ if(next!==height){height=next;send('streamlit:setFrameHeight',{height:next})}
+}
+const observer=new ResizeObserver(()=>requestAnimationFrame(fit));
+observer.observe(document.getElementById('root')!);
+new MutationObserver(()=>requestAnimationFrame(fit)).observe(document.getElementById('root')!,{childList:true,subtree:true,characterData:true});
+window.addEventListener('message',e=>{if(e.source!==window.parent||e.data?.type!=='streamlit:render')return;const args=e.data.args as Args;setRole(args.role);root.render(<Workspace key={args.storageKey} args={args}/>);requestAnimationFrame(fit)});
 window.addEventListener('keydown',e=>{if(e.key==='Escape'){const btn=document.querySelector<HTMLButtonElement>('.row-detail .secondary');btn?.click()}});
 window.addEventListener('resize',fit);
 send('streamlit:componentReady',{apiVersion:1});
