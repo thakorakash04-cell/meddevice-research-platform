@@ -7,3 +7,9 @@ rewrite_app.py
 mfg_raw.json
 imp_raw.json
 build_cdsco_excel_db.py
+
+node_modules/
+__pycache__/
+*.db
+.streamlit/secrets.toml
+.env

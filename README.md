@@ -64,3 +64,7 @@ streamlit run app.py
    - **Branch**: `main`
    - **Main file path**: `app.py`
 4. Click **"Deploy!"** — your app will be live on a public URL like `https://<your-app-name>.streamlit.app`!
+
+## Login and table workspace
+
+This app now requires username/password login. Configure Streamlit Secrets and create viewer accounts as described in [WORKSPACE_SETUP.md](WORKSPACE_SETUP.md). Tables include Excel-style filters, column visibility, optional totals, and full-window views.

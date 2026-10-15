@@ -20,6 +20,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+from workspace_auth import require_workspace, admin_download
+from workspace_ui import data_table, workspace_theme
+workspace_theme()
+workspace_store, workspace_actor, workspace_identity = require_workspace()
+
 # ─── BASE DIRECTORY FOR PARQUET FILES ─────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -261,15 +266,15 @@ def apply_column_filters(df, filter_key_prefix=""):
     """Apply per-column filters like Excel"""
     if df.empty:
         return df
-    
+
     filtered_df = df.copy()
-    
+
     # Display filter controls for each column
     st.markdown(f"<div class='column-filter-header'>🔍 Column Filters (Click expander to filter each column)</div>", unsafe_allow_html=True)
-    
+
     with st.expander("⚙️ Filter Controls", expanded=False):
         filter_cols = st.columns(len(df.columns))
-        
+
         for idx, col in enumerate(df.columns):
             with filter_cols[idx]:
                 st.markdown(f"**{col}**")
@@ -279,7 +284,7 @@ def apply_column_filters(df, filter_key_prefix=""):
                     key=f"ft_{filter_key_prefix}_{col}",
                     label_visibility="collapsed"
                 )
-                
+
                 if filter_type == "Text Contains":
                     search_text = st.text_input(
                         f"Search in {col}",
@@ -292,7 +297,7 @@ def apply_column_filters(df, filter_key_prefix=""):
                                 search_text.lower(), regex=False, na=False
                             )
                         ]
-                
+
                 elif filter_type == "Exact Match":
                     unique_vals = sorted(filtered_df[col].dropna().astype(str).unique().tolist())[:50]
                     selected = st.multiselect(
@@ -303,7 +308,7 @@ def apply_column_filters(df, filter_key_prefix=""):
                     )
                     if selected:
                         filtered_df = filtered_df[filtered_df[col].astype(str).isin(selected)]
-    
+
     # Show how many rows are displayed
     initial_count = len(df)
     filtered_count = len(filtered_df)
@@ -313,7 +318,7 @@ def apply_column_filters(df, filter_key_prefix=""):
             🔎 Filtered: <b>{filtered_count:,}</b> of {initial_count:,} rows | Active filters applied
         </div>
         """, unsafe_allow_html=True)
-    
+
     return filtered_df
 
 # ─── DATA LOADERS ────────────────────────────────────────────────────────────
@@ -453,6 +458,8 @@ def search_us_fda(device_query: str, applicant: str, ai_mode=True):
                 "loaded": len(results), "url": url}
 
 
+workspace_theme()
+
 # ─── SIDEBAR ──────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### ⚕️ Regulatory Intelligence")
@@ -517,7 +524,7 @@ with st.sidebar:
     selected_categories = st.multiselect("Device Categories Filter", all_categories, default=all_categories)
 
     search_btn = st.button("▶️ Run Verified Search", type="primary", use_container_width=True)
-    
+
     if search_btn:
         st.session_state.search_executed = True
 
@@ -525,12 +532,12 @@ with st.sidebar:
     st.markdown("**📥 Download Full Databases**")
     if os.path.exists(os.path.join(BASE_DIR, "cdsco_combined_risk.xlsx")):
         with open(os.path.join(BASE_DIR, "cdsco_combined_risk.xlsx"), "rb") as f:
-            st.download_button("📊 CDSCO Risk List (.xlsx)", data=f, file_name="cdsco_combined_risk.xlsx", 
+            admin_download("📊 CDSCO Risk List (.xlsx)", data=f, file_name="cdsco_combined_risk.xlsx",
                              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # ─── MAIN UI EXECUTION ────────────────────────────────────────────────────────
 if st.session_state.search_executed and (device_name.strip() or applicant_name.strip()):
-    
+
     tab_fda, tab_risk, tab_approved = st.tabs([
         "🇺🇸 FDA 510(k)", "🇮🇳 CDSCO Risk Classification", "🇮🇳 Approved Devices"
     ])
@@ -544,7 +551,7 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                 fda_res = search_us_fda(device_name, applicant_name, ai_mode=ai_search_toggle)
 
             if fda_res.get("status") == "success" and fda_res["results"]:
-                st.info(f"Loaded {len(fda_res['results']):,} of {fda_res['total']:,} matching FDA 510(k) records. Use column filters below; the Excel download includes the filtered records.")
+                st.info(f"Loaded {len(fda_res['results']):,} of {fda_res['total']:,} matching FDA 510(k) records. Use column filters in the table; administrators can export filtered records from its toolbar.")
                 st.markdown(f"""
                 <div class='audit-trace'>
                     🔐 openFDA Hash: <code>{fda_res['hash'][:16]}...</code><br>
@@ -565,64 +572,15 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                 df_fda_filtered = apply_column_filters(df_fda_filter, filter_key_prefix="fda")
                 filtered_records = [fda_res["results"][i] for i in df_fda_filtered.index]
 
-                # Create dataframe with clickable links
-                df_fda_display = []
-                for r in filtered_records:
-                    k_num = r.get("k_number", "")
-                    device = r.get("device_name", "")
-                    applicant = r.get("applicant", "")
-                    clearance = r.get("decision_date", "")
-                    dev_class = r.get("openfda", {}).get("device_class", "")
-                    
-                    pmn_link = get_fda_pmn_link(k_num)
-                    pdf_link = get_fda_pdf_link(k_num)
-                    
-                    # Build HTML with clickable links
-                    links_html = ""
-                    if pmn_link:
-                        links_html += f'<a href="{pmn_link}" target="_blank" class="fda-link-btn fda-pmn-link">📋 View PMN</a>'
-                    if pdf_link:
-                        links_html += f'<a href="{pdf_link}" target="_blank" class="fda-link-btn fda-pdf-link">📄 PDF Summary</a>'
-                    
-                    content_html = f"""
-                    <div class="fda-result-row">
-                        <div class="fda-result-content">
-                            <div style="font-weight: 700; color: #0f172a; margin-bottom: 4px;">
-                                <span style="background: #0284c7; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">K{k_num.replace('K', '')}</span>
-                                {device}
-                            </div>
-                            <div style="color: #475569; font-size: 13px; margin-bottom: 4px;">
-                                <b>Applicant:</b> {applicant}
-                            </div>
-                            <div style="color: #64748b; font-size: 12px; display: flex; gap: 16px;">
-                                <span><b>Clearance:</b> {clearance}</span>
-                                <span><b>Class:</b> {dev_class}</span>
-                            </div>
-                        </div>
-                        <div class="fda-result-links">
-                            {links_html}
-                        </div>
-                    </div>
-                    """
-                    df_fda_display.append(content_html)
-                
-                # Download button
-                df_fda_export = df_fda_filtered
-                if df_fda_filtered.empty:
-                    st.info("No FDA records match the selected column filters.")
-
-                st.download_button(
-                    label="📥 Download FDA 510(k) Results (.xlsx)",
-                    data=to_excel_bytes(df_fda_export, sheet_name="FDA_510k"),
-                    file_name=f"FDA_510k_{device_name}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="dl_fda"
-                )
-                st.write("")
-                
-                # Display results with clickable links
-                for html_result in df_fda_display:
-                    st.markdown(html_result, unsafe_allow_html=True)
+                df_fda_display = df_fda_filtered.copy()
+                df_fda_display["View PMN"] = df_fda_display["510(k) Number"].map(get_fda_pmn_link)
+                df_fda_display["PDF Summary"] = df_fda_display["510(k) Number"].map(get_fda_pdf_link)
+                data_table(df_fda_display, "research-fda", "FDA 510(k) Results")
+                admin_download(
+                    "Download FDA 510(k) Results (.xlsx)",
+                    data=to_excel_bytes(df_fda_filtered, sheet_name="FDA_510k"),
+                    file_name="FDA_510k_Results.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_fda")
             elif fda_res.get("status") == "error":
                 st.error(f"FDA search could not finish: {fda_res.get('message', 'Unknown error')}. Please run the search again.")
             else:
@@ -681,8 +639,8 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
 
                     # Apply per-column filters
                     df_risk_filtered = apply_column_filters(df_risk_disp, filter_key_prefix="risk")
-                    
-                    st.download_button(
+
+                    admin_download(
                         label="📥 Download Risk Classification Results (.xlsx)",
                         data=to_excel_bytes(df_risk_filtered, sheet_name="CDSCO_Risk"),
                         file_name=f"CDSCO_Risk_{device_name}.xlsx",
@@ -690,7 +648,7 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                         key="dl_cdsco_risk"
                     )
 
-                    st.dataframe(df_risk_filtered, use_container_width=True)
+                    data_table(df_risk_filtered, "research-risk", "CDSCO Risk Classification")
                 else:
                     st.warning(f"No CDSCO classification matches found for '{device_name}'.")
 
@@ -699,7 +657,7 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
         if jurisdiction in ["Dual (US FDA + CDSCO)", "CDSCO India Only"]:
             # STEP 2: Manufacturers & Importers
             st.markdown("#### Step 2: Available Manufacturers & Importers")
-            
+
             df_app = approved_payload["data"]
             if not df_app.empty:
                 if search_scope == "Product Name Only":
@@ -740,8 +698,8 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
 
                     # Apply per-column filters
                     df_app_filtered = apply_column_filters(df_app_disp, filter_key_prefix="approved")
-                    
-                    st.download_button(
+
+                    admin_download(
                         label="📥 Download Approved Devices (.xlsx)",
                         data=to_excel_bytes(df_app_filtered, sheet_name="Approved_Devices"),
                         file_name=f"CDSCO_Devices_{device_name}.xlsx",
@@ -750,6 +708,6 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                     )
 
                     # Display all results with scrolling
-                    st.dataframe(df_app_filtered, use_container_width=True, height=600)
+                    data_table(df_app_filtered, "research-approved", "Approved Devices")
                 else:
                     st.info(f"No approved devices matched '{device_name}'.")
