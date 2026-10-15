@@ -1,7 +1,7 @@
 """Session-private chat over the current research results, isolated from search reruns."""
 import pandas as pd
 import streamlit as st
-from grounded_ai import ask,settings
+from grounded_ai import ask,settings,clean_answer
 
 @st.fragment
 def render_research_chat(tables,version,store,actor):
@@ -35,13 +35,13 @@ def render_research_chat(tables,version,store,actor):
                 result=ask(tables,question,messages,scope='Regulatory Research: current search results only. FDA clearances and CDSCO risk classifications/registration listings are distinct sources. No completeness or legal/clinical conclusions.')
             store.require_permission(actor,'use_tools')
             store.log_event(actor,'tool_use','Ask AI')
-            messages.extend([{'role':'user','text':question},{'role':'assistant','text':result['answer'],'evidence':result['evidence']}])
+            messages.extend([{'role':'user','text':question},{'role':'assistant','text':clean_answer(result['answer']),'evidence':result['evidence']}])
             messages[:]=messages[-12:]
         except ValueError as exc:st.error(str(exc))
     with transcript:
         for message in messages:
             with st.chat_message(message['role']):
-                st.markdown(message['text'])
+                st.markdown(clean_answer(message['text']) if message['role']=='assistant' else message['text'])
                 for item in message.get('evidence',[]):
                     with st.expander('['+item['citation']+'] '+item['table']+' · '+str(item['matched_records'])+' matching records'):
                         st.caption('Showing '+str(item['shown_rows'])+' of '+str(item['result_rows'])+' result rows. Calculations use all matching records. Row references are positions within this loaded snapshot.')

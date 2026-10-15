@@ -64,3 +64,11 @@ def test_frame_dates_nulls_and_numeric_values_are_json_safe():
 def test_configuration_uses_streamlit_secrets_and_keeps_model_override():
     with patch('grounded_ai.st.secrets',{'GEMINI_API_KEY':' secret-key ','ASK_AI_MODEL':'models/custom-model'}),patch.dict('os.environ',{'GEMINI_API_KEY':'other-key'}):
         assert settings()==('secret-key','custom-model')
+
+
+def test_answer_references_are_removed_without_changing_device_identifiers():
+    from grounded_ai import clean_answer
+    assert clean_answer('Laser K240001 [T1:R30], class II (Q1).')=='Laser K240001, class II.'
+    assert clean_answer('Two records [T1:R1, T1:R2] [Q1, Q2].')=='Two records.'
+    assert clean_answer('ABC is Class C t1:t30.')=='ABC is Class C.'
+    assert clean_answer('**Devices**\n\n- K240001\n  - Class II [Q1]')=='**Devices**\n\n- K240001\n  - Class II'
