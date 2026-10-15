@@ -88,6 +88,21 @@ class WorkspaceUITests(unittest.TestCase):
             at.run()
             assert at.checkbox(key='research_ai_consent').value is True
             assert any('[Q1]' in e.label for e in at.expander)
+            at.text_area(key='research_ai_question').set_value('Extract intended use from the K240001 summary PDF.')
+            document={'name':'K240001 FDA summary','k_number':'K240001','url':'https://www.accessdata.fda.gov/cdrh_docs/pdf24/K240001.pdf','status':'read','sha256':'a'*64,'total_pages':1,'read_pages':1,'warnings':[],'pages':[{'page':1,'text':'Intended use: soft tissue cutting. Bench testing: optical output.'}]}
+            plan={'queries':[{'table':'T1','filters':[{'column':'510(k) Number','op':'eq','value':'K240001'}]}],'read_fda_pdfs':True}
+            with patch('fda_pdf.fetch_fda_summary',return_value=document) as fetch,patch('grounded_ai.generate',side_effect=[plan,'The summary describes soft tissue cutting.']):
+                next(b for b in at.button if b.label=='Ask AI').click().run()
+                assert not at.exception
+                fetch.assert_called_once_with('K240001')
+            assert any(e.label.startswith('PDF source: K240001') for e in at.expander)
+            assert any(s.label=='Review extracted page' for s in at.selectbox)
+            assert any('Intended use: soft tissue cutting' in t.value for t in at.text)
+            with patch('fda_pdf.fetch_fda_summary',return_value=document),patch('grounded_ai.generate',side_effect=[plan,'The summary describes soft tissue cutting.']):
+                next(b for b in at.button if b.label=='Ask AI').click().run()
+                assert not at.exception
+            assert sum(e.label.startswith('PDF source: K240001') for e in at.expander)==2
+
             next(b for b in at.button if b.label=='Clear chat').click().run()
             assert not at.session_state['_research_ai_messages']
 
