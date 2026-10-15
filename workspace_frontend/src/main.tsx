@@ -5,10 +5,10 @@ import {setRole} from './bridge';
 import type {Cell} from './grid-utils';
 import './globals.css';
 import './workspace.css';
-type Args={headers:string[];rows:Cell[][];title:string;role:string;storageKey:string};
+type Args={headers:string[];rows:Cell[][];title:string;description?:string;role:string;storageKey:string};
 function Workspace({args}:{args:Args}){
  const [selected,setSelected]=useState<Cell[]|null>(null);
- return <div className="workspace-table"><div className="paneltitle"><h2>{args.title}</h2><span>Click a value to see its complete row</span></div><DataGrid headers={args.headers} rows={args.rows} storageKey={args.storageKey} filename={args.title} onCell={r=>setSelected(r)}/>{selected&&<div className="row-detail" role="dialog" aria-modal="true" aria-label="Full-window record details"><div className="detailtopbar"><button className="secondary" onClick={()=>setSelected(null)}>← Back to table</button><h2>Record details</h2></div><dl>{args.headers.map((h,i)=><div key={h}><dt>{h}</dt><dd>{String(selected[i]??'—').split(/(https?:\/\/[^\s]+)/g).map((s,j)=>/^https?:\/\//.test(s)?<a key={j} href={s} target="_blank" rel="noreferrer">{s}</a>:s)}</dd></div>)}</dl></div>}</div>
+ return <div className="workspace-table"><div className="paneltitle"><div><h2>{args.title}</h2><p>{args.description}</p></div><span>Open any record for details</span></div><DataGrid headers={args.headers} rows={args.rows} storageKey={args.storageKey} filename={args.title} onCell={r=>setSelected(r)}/>{selected&&<div className="row-detail" role="dialog" aria-modal="true" aria-label="Full-window record details"><div className="detailtopbar"><button className="secondary" onClick={()=>setSelected(null)}>← Back to table</button><h2>Record details</h2></div><dl>{args.headers.map((h,i)=><div key={h}><dt>{h}</dt><dd>{String(selected[i]??'—').split(/(https?:\/\/[^\s]+)/g).map((s,j)=>/^https?:\/\//.test(s)?<a key={j} href={s} target="_blank" rel="noreferrer">{s}</a>:s)}</dd></div>)}</dl></div>}</div>
 }
 const root=createRoot(document.getElementById('root')!);
 const send=(type:string,extra:Record<string,unknown>)=>window.parent.postMessage({isStreamlitMessage:true,type,...extra},'*');

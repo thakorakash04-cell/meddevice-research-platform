@@ -1,0 +1,37 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const ts=require('typescript');
+const {JSDOM}=require('jsdom');
+const dom=new JSDOM('<div id="root"></div>',{url:'https://workspace.test/'});
+for(const key of ['window','document','HTMLElement','Event','MouseEvent','MessageEvent','KeyboardEvent','localStorage'])global[key]=dom.window[key];
+Object.defineProperty(global,'navigator',{value:dom.window.navigator,configurable:true});
+global.IS_REACT_ACT_ENVIRONMENT=true;
+require.extensions['.css']=()=>{};
+for(const ext of ['.ts','.tsx'])require.extensions[ext]=(module,name)=>module._compile(ts.transpileModule(fs.readFileSync(name,'utf8'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,name);
+const {act}=require('react');
+require('../src/main.tsx');
+const button=name=>Array.from(document.querySelectorAll('button')).find(x=>x.textContent.trim()===name);
+const click=async el=>{assert.ok(el,'element exists');await act(async()=>el.click())};
+const rows=()=>Array.from(document.querySelectorAll('tbody tr'));
+(async()=>{
+ const data=Array.from({length:45},(_,i)=>['Device '+(i+1),i+1,'https://example.org/'+i]);
+ await act(async()=>window.dispatchEvent(new MessageEvent('message',{source:window,data:{type:'streamlit:render',args:{headers:['Device','Quantity','Source'],rows:data,title:'FDA 510(k)',description:'US premarket clearances · 20 results per page',role:'viewer',storageKey:'test-grid'}}})));
+ assert.equal(rows().length,20);assert.match(document.querySelector('.pagination').textContent,/1–20 of 45 records · Page 1 of 3/);
+ await click(button('Next'));assert.equal(rows().length,20);assert.match(rows()[0].textContent,/Device 21/);
+ await click(button('Next'));assert.equal(rows().length,5);assert.equal(button('Next').disabled,true);
+ await click(button('Previous'));assert.match(rows()[0].textContent,/Device 21/);
+ const filter=document.querySelector('[aria-label="Filter text for Device"]');
+ await act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(filter,'Device 45');filter.dispatchEvent(new Event('input',{bubbles:true}))});
+ assert.equal(rows().length,1);assert.match(document.querySelector('.pagination').textContent,/1–1 of 1/);
+ await click(button('Device 45'));assert.equal(document.querySelector('[aria-label="Full-window record details"]')!==null,true);
+ await act(async()=>window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+ await click(button('Clear column filters'));assert.equal(rows().length,20);
+ await click(document.querySelector('[aria-label="Full-screen table"]'));assert.equal(document.querySelector('.grid-expanded')!==null,true);
+ await act(async()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(document.querySelector('.grid-expanded'),null);
+ assert.equal(button('Export filtered CSV'),undefined);
+ assert.equal(document.querySelector('.source-link').textContent,'Source');assert.equal(document.querySelector('.source-link').getAttribute('href'),'https://example.org/0');
+ // Totals cover all 45 records, not only the visible 20.
+ const totalCheck=Array.from(document.querySelectorAll('.gridsettings:nth-of-type(2) .gridsettingspanel label')).find(x=>x.textContent==='Quantity').querySelector('input');
+ await click(totalCheck);assert.match(document.querySelector('tfoot').textContent,/1,035/);
+ console.log('Passed: 20/20/5 pagination; next/previous; full-dataset filtering; page reset; row details; fullscreen/Escape; viewer export restrictions; readable source links; all-row totals.');
+})().catch(error=>{console.error(error);process.exitCode=1});

@@ -28,229 +28,8 @@ workspace_store, workspace_actor, workspace_identity = require_workspace()
 # ─── BASE DIRECTORY FOR PARQUET FILES ─────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# ─── SESSION STATE INITIALIZATION ─────────────────────────────────────────────
-if 'column_filters' not in st.session_state:
-    st.session_state.column_filters = {}
 if 'search_executed' not in st.session_state:
     st.session_state.search_executed = False
-
-# ─── ENHANCED GLOBAL STYLES ───────────────────────────────────────────────────
-st.markdown("""
-<style>
-/* App Main View */
-[data-testid="stAppViewContainer"] { background: #f8fafc; }
-
-/* ─── SIDEBAR STYLING ─── */
-[data-testid="stSidebar"] {
-    background-color: #f1f5f9;
-    padding-top: 1rem;
-}
-
-/* Sidebar Headings */
-[data-testid="stSidebar"] h1,
-[data-testid="stSidebar"] h2,
-[data-testid="stSidebar"] h3,
-[data-testid="stSidebar"] h4 {
-    color: #0f172a !important;
-    font-weight: 700;
-}
-
-/* Sidebar Input Labels */
-[data-testid="stSidebar"] label,
-[data-testid="stSidebar"] .stWidgetLabel p {
-    color: #0f172a !important;
-    font-weight: 600 !important;
-    font-size: 0.88rem !important;
-    letter-spacing: 0.3px;
-    margin-bottom: 4px;
-}
-
-/* Search Text Input Boxes */
-[data-testid="stSidebar"] input[type="text"] {
-    background-color: #ffffff !important;
-    color: #0f172a !important;
-    border: 1px solid #cbd5e1 !important;
-    border-radius: 6px !important;
-    font-size: 0.95rem !important;
-    font-weight: 500 !important;
-}
-[data-testid="stSidebar"] input[type="text"]::placeholder {
-    color: #64748b !important;
-}
-[data-testid="stSidebar"] input[type="text"]:focus {
-    border-color: #0284c7 !important;
-    box-shadow: 0 0 0 1px #0284c7 !important;
-    color: #0f172a !important;
-}
-
-/* Selectbox & Multiselect Field Containers */
-[data-testid="stSidebar"] div[data-baseweb="select"] > div {
-    background-color: #ffffff !important;
-    border: 1px solid #cbd5e1 !important;
-    border-radius: 6px !important;
-}
-[data-testid="stSidebar"] div[data-baseweb="select"] * {
-    color: #0f172a !important;
-}
-
-/* Multiselect Device Category Selected Chips */
-[data-testid="stSidebar"] span[data-baseweb="tag"] {
-    background-color: #0284c7 !important;
-    color: #ffffff !important;
-    border-radius: 4px !important;
-    font-weight: 600 !important;
-    padding: 3px 8px !important;
-}
-[data-testid="stSidebar"] span[data-baseweb="tag"] span {
-    color: #ffffff !important;
-}
-
-/* Dropdown Menu Popup */
-div[data-baseweb="popover"],
-div[data-baseweb="menu"] {
-    background-color: #ffffff !important;
-    border-radius: 8px !important;
-    border: 1px solid #cbd5e1 !important;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.15) !important;
-}
-div[data-baseweb="popover"] div[role="option"],
-div[data-baseweb="menu"] div[role="option"] {
-    color: #0f172a !important;
-    font-weight: 500 !important;
-    background-color: #ffffff !important;
-    padding: 8px 12px !important;
-}
-div[data-baseweb="popover"] div[role="option"]:hover,
-div[data-baseweb="menu"] div[role="option"]:hover {
-    background-color: #e0f2fe !important;
-    color: #0369a1 !important;
-}
-
-/* Primary Action Button */
-[data-testid="stSidebar"] button[kind="primary"] {
-    background-color: #0284c7 !important;
-    color: #ffffff !important;
-    border: none !important;
-    border-radius: 6px !important;
-    font-weight: 700 !important;
-    padding: 10px !important;
-    margin-top: 8px;
-}
-[data-testid="stSidebar"] button[kind="primary"]:hover {
-    background-color: #0369a1 !important;
-}
-
-/* ─── CARD STYLES ─── */
-.card {
-    background: #ffffff;
-    border-radius: 8px;
-    padding: 16px 20px;
-    margin-bottom: 12px;
-    border: 1px solid #e2e8f0;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-}
-.card-blue { border-left: 4px solid #0284c7; }
-.card-green { border-left: 4px solid #10b981; }
-
-.audit-trace {
-    background: #0f172a;
-    color: #38bdf8;
-    border-radius: 6px;
-    padding: 8px 12px;
-    font-family: monospace;
-    font-size: 11px;
-    margin-top: 6px;
-}
-
-/* ─── COLUMN FILTER STYLES (EXCEL-LIKE) ─── */
-.column-filter-header {
-    background: linear-gradient(135deg, #f0f4f8 0%, #e2e8f0 100%);
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    padding: 8px 12px;
-    margin-bottom: 12px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-weight: 600;
-    color: #0f172a;
-    font-size: 12px;
-}
-
-.filter-badge {
-    background: #0284c7;
-    color: white;
-    border-radius: 12px;
-    padding: 2px 8px;
-    font-size: 11px;
-    font-weight: 600;
-    margin-left: 4px;
-}
-
-.results-info {
-    background: #eff6ff;
-    color: #0369a1;
-    border: 1px solid #bfdbfe;
-    border-radius: 4px;
-    padding: 10px 12px;
-    font-size: 12px;
-    margin-bottom: 12px;
-    font-weight: 600;
-}
-
-/* ─── FDA RESULTS TABLE STYLING ─── */
-.fda-result-row {
-    display: flex;
-    gap: 12px;
-    margin-bottom: 16px;
-    padding: 12px;
-    border: 1px solid #e2e8f0;
-    border-radius: 6px;
-    background: #ffffff;
-}
-
-.fda-result-content {
-    flex: 1;
-}
-
-.fda-result-links {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    justify-content: center;
-}
-
-.fda-link-btn {
-    padding: 6px 12px;
-    border-radius: 4px;
-    text-decoration: none;
-    font-weight: 600;
-    font-size: 12px;
-    text-align: center;
-    transition: all 0.2s;
-    display: inline-block;
-}
-
-.fda-pmn-link {
-    background: #0284c7;
-    color: white;
-}
-
-.fda-pmn-link:hover {
-    background: #0369a1;
-}
-
-.fda-pdf-link {
-    background: #059669;
-    color: white;
-}
-
-.fda-pdf-link:hover {
-    background: #047857;
-}
-
-</style>
-""", unsafe_allow_html=True)
 
 from research_engine import sha256, get_fda_pmn_link, get_fda_pdf_link, expand_terms, robust_dataframe_search
 
@@ -260,66 +39,6 @@ def to_excel_bytes(df, sheet_name="Results"):
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         export_df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
     return output.getvalue()
-
-# ─── EXCEL-STYLE PER-COLUMN FILTER FUNCTION ────────────────────────────────
-def apply_column_filters(df, filter_key_prefix=""):
-    """Apply per-column filters like Excel"""
-    if df.empty:
-        return df
-
-    filtered_df = df.copy()
-
-    # Display filter controls for each column
-    st.markdown(f"<div class='column-filter-header'>🔍 Column Filters (Click expander to filter each column)</div>", unsafe_allow_html=True)
-
-    with st.expander("⚙️ Filter Controls", expanded=False):
-        filter_cols = st.columns(len(df.columns))
-
-        for idx, col in enumerate(df.columns):
-            with filter_cols[idx]:
-                st.markdown(f"**{col}**")
-                filter_type = st.radio(
-                    f"Filter type for {col}",
-                    ["All", "Text Contains", "Exact Match"],
-                    key=f"ft_{filter_key_prefix}_{col}",
-                    label_visibility="collapsed"
-                )
-
-                if filter_type == "Text Contains":
-                    search_text = st.text_input(
-                        f"Search in {col}",
-                        key=f"fc_{filter_key_prefix}_{col}",
-                        placeholder="Type to search..."
-                    )
-                    if search_text.strip():
-                        filtered_df = filtered_df[
-                            filtered_df[col].astype(str).str.lower().str.contains(
-                                search_text.lower(), regex=False, na=False
-                            )
-                        ]
-
-                elif filter_type == "Exact Match":
-                    unique_vals = sorted(filtered_df[col].dropna().astype(str).unique().tolist())[:50]
-                    selected = st.multiselect(
-                        f"Select values in {col}",
-                        options=unique_vals,
-                        key=f"fm_{filter_key_prefix}_{col}",
-                        max_selections=10
-                    )
-                    if selected:
-                        filtered_df = filtered_df[filtered_df[col].astype(str).isin(selected)]
-
-    # Show how many rows are displayed
-    initial_count = len(df)
-    filtered_count = len(filtered_df)
-    if filtered_count < initial_count:
-        st.markdown(f"""
-        <div class='results-info'>
-            🔎 Filtered: <b>{filtered_count:,}</b> of {initial_count:,} rows | Active filters applied
-        </div>
-        """, unsafe_allow_html=True)
-
-    return filtered_df
 
 # ─── DATA LOADERS ────────────────────────────────────────────────────────────
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -462,19 +181,12 @@ workspace_theme()
 
 # ─── SIDEBAR ──────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("### ⚕️ Regulatory Intelligence")
+    st.markdown("### Regulatory Intelligence")
 
-    st.markdown(f"""
-    <div style="background:#1e293b; border-radius:8px; padding:12px; border:1px solid #334155; margin-bottom:12px;">
-        <div style="color:#10b981; font-weight:700; font-size:12px; display:flex; align-items:center; gap:6px;">
-            <span>🟢</span> CDSCO DAILY AUTO-SYNC ACTIVE
-        </div>
-        <div style="color:#f8fafc; font-size:12px; margin-top:6px;"><b>Last Data Fetched:</b><br><span style="color:#38bdf8;">{sync_meta['last_updated']}</span></div>
-        <div style="color:#94a3b8; font-size:11px; margin-top:4px;"><b>Schedule:</b> {sync_meta['schedule']}</div>
-        <div style="color:#94a3b8; font-size:11px; margin-top:2px;"><b>Verified Scope:</b> {sync_meta['risk_records']:,} Risk Classes | {sync_meta['approved_records']:,} Registrations</div>
-        <div style="color:#10b981; font-size:11px; margin-top:2px;"><b>New This Run:</b> +{sync_meta['risk_delta']:,} Risk Classes | +{sync_meta['approved_delta']:,} Registrations</div>
-    </div>
-    """, unsafe_allow_html=True)
+    with st.expander("Database update details"):
+        st.caption("Last fetched: " + str(sync_meta["last_updated"]))
+        st.caption("Schedule: " + str(sync_meta["schedule"]))
+        st.caption(f"{sync_meta['risk_records']:,} risk classifications · {sync_meta['approved_records']:,} registrations")
 
     st.markdown("---")
     jurisdiction = st.selectbox("Regulatory Target", ["Dual (US FDA + CDSCO)", "CDSCO India Only", "US FDA Only"])
@@ -483,10 +195,10 @@ with st.sidebar:
     applicant_name = st.text_input("Manufacturer / Importer", value="", placeholder="e.g. Meril, Abbott")
 
     st.markdown("---")
-    st.markdown("**🤖 AI Search & Engine Controls**")
+    st.markdown("**Search options**")
 
     ai_search_toggle = st.toggle(
-        "🤖 AI-Assisted Smart Search",
+        "Smart search",
         value=True,
         help="ON: AI semantic synonyms | OFF: Exact keyword matching"
     )
@@ -505,7 +217,7 @@ with st.sidebar:
         selected_mode = mode_map[match_mode]
     else:
         selected_mode = "all_words"
-        st.caption("✨ AI Search Active: Expanding synonyms with relevance ranking")
+        st.caption("Includes related terms, ranked by relevance.")
 
     search_scope = st.selectbox(
         "Search Field Scope",
@@ -523,43 +235,36 @@ with st.sidebar:
     cdsco_role = st.selectbox("Applicant Role Filter", ["Both (Manufacturer + Importer)", "Manufacturer Only", "Importer Only"])
     selected_categories = st.multiselect("Device Categories Filter", all_categories, default=all_categories)
 
-    search_btn = st.button("▶️ Run Verified Search", type="primary", use_container_width=True)
+    search_btn = st.button("Run search", type="primary", use_container_width=True)
 
     if search_btn:
         st.session_state.search_executed = True
 
-    st.markdown("---")
-    st.markdown("**📥 Download Full Databases**")
-    if os.path.exists(os.path.join(BASE_DIR, "cdsco_combined_risk.xlsx")):
-        with open(os.path.join(BASE_DIR, "cdsco_combined_risk.xlsx"), "rb") as f:
-            admin_download("📊 CDSCO Risk List (.xlsx)", data=f, file_name="cdsco_combined_risk.xlsx",
-                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    if workspace_identity["role"] == "admin":
+        with st.expander("Database downloads"):
+            if os.path.exists(os.path.join(BASE_DIR, "cdsco_combined_risk.xlsx")):
+                with open(os.path.join(BASE_DIR, "cdsco_combined_risk.xlsx"), "rb") as f:
+                    admin_download("CDSCO Risk List (.xlsx)", data=f, file_name="cdsco_combined_risk.xlsx",
+                                   mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+st.title("MedDevice Research")
+st.caption("Search regulatory records, compare results, and open full-window record details.")
 
 # ─── MAIN UI EXECUTION ────────────────────────────────────────────────────────
 if st.session_state.search_executed and (device_name.strip() or applicant_name.strip()):
 
     tab_fda, tab_risk, tab_approved = st.tabs([
-        "🇺🇸 FDA 510(k)", "🇮🇳 CDSCO Risk Classification", "🇮🇳 Approved Devices"
+        "FDA 510(k)", "CDSCO Risk Classification", "Approved Devices"
     ])
     term = device_name.strip()
     app_term = applicant_name.strip()
 
     with tab_fda:
         if jurisdiction in ["Dual (US FDA + CDSCO)", "US FDA Only"]:
-            st.markdown("<div class='card card-blue'><h3 style='color:#0284c7;margin:0'>🇺🇸 US FDA — 510(k) Premarket Clearances</h3></div>", unsafe_allow_html=True)
             with st.spinner("Loading all matching FDA 510(k) records..."):
                 fda_res = search_us_fda(device_name, applicant_name, ai_mode=ai_search_toggle)
 
             if fda_res.get("status") == "success" and fda_res["results"]:
-                st.info(f"Loaded {len(fda_res['results']):,} of {fda_res['total']:,} matching FDA 510(k) records. Use column filters in the table; administrators can export filtered records from its toolbar.")
-                st.markdown(f"""
-                <div class='audit-trace'>
-                    🔐 openFDA Hash: <code>{fda_res['hash'][:16]}...</code><br>
-                    📡 Query: <a href='{fda_res['url']}' style='color:#38bdf8;' target='_blank'>View Query</a>
-                </div>
-                """, unsafe_allow_html=True)
-                st.write("")
-
                 df_fda_filter = pd.DataFrame([{
                     "510(k) Number": r.get("k_number", ""),
                     "Device Name": r.get("device_name", ""),
@@ -569,18 +274,21 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                         if isinstance(r.get("openfda", {}).get("device_class", ""), list)
                         else r.get("openfda", {}).get("device_class", ""),
                 } for r in fda_res["results"]])
-                df_fda_filtered = apply_column_filters(df_fda_filter, filter_key_prefix="fda")
-                filtered_records = [fda_res["results"][i] for i in df_fda_filtered.index]
+                df_fda_filtered = df_fda_filter
 
                 df_fda_display = df_fda_filtered.copy()
                 df_fda_display["View PMN"] = df_fda_display["510(k) Number"].map(get_fda_pmn_link)
                 df_fda_display["PDF Summary"] = df_fda_display["510(k) Number"].map(get_fda_pdf_link)
-                data_table(df_fda_display, "research-fda", "FDA 510(k) Results")
-                admin_download(
-                    "Download FDA 510(k) Results (.xlsx)",
-                    data=to_excel_bytes(df_fda_filtered, sheet_name="FDA_510k"),
-                    file_name="FDA_510k_Results.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_fda")
+                data_table(df_fda_display, "research-fda", "FDA 510(k)",
+                           description="US premarket clearances · 20 results per page")
+                with st.expander("Source details", key="fda_source_details"):
+                    st.caption(f"Loaded {len(df_fda_filtered):,} of {fda_res['total']:,} matching records from openFDA.")
+                    st.caption("Data fingerprint: " + fda_res["hash"])
+                    st.link_button("Open source query", fda_res["url"])
+                    if workspace_identity["role"] == "admin":
+                        admin_download("Download all search results (.xlsx)",
+                            data=to_excel_bytes(df_fda_filtered, sheet_name="FDA_510k"),
+                            file_name="FDA_510k_Results.xlsx", key="dl_fda")
             elif fda_res.get("status") == "error":
                 st.error(f"FDA search could not finish: {fda_res.get('message', 'Unknown error')}. Please run the search again.")
             else:
@@ -588,11 +296,11 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
 
             st.write("")
 
+        else:
+            st.info("Select a regulatory target that includes US FDA to search this tab.")
+
     with tab_risk:
         if jurisdiction in ["Dual (US FDA + CDSCO)", "CDSCO India Only"]:
-            # STEP 1: Risk Classification
-            st.markdown("#### Step 1: Risk Classification Lookup")
-            st.caption("Covers: ListOfApprovedRiskDevice + ListOfApprovedRiskNSSMDevice")
 
             df_risk = risk_payload["data"]
             if not df_risk.empty:
@@ -621,12 +329,6 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                 else:
                     risk_matches['Classification Source Portal'] = 'Approved Risk Device List'
 
-                st.markdown(f"""
-                <div class='audit-trace'>
-                    📊 Total Records: {len(df_risk):,} | Matches Found: {len(risk_matches):,}
-                </div>
-                """, unsafe_allow_html=True)
-
                 if not risk_matches.empty:
                     df_risk_disp = risk_matches[[
                         "medical_device_name", "device_category", "risk_classification_under_mdr_2017", "intended_use", "Classification Source Portal"
@@ -637,26 +339,24 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                         "intended_use": "Intended Use"
                     })
 
-                    # Apply per-column filters
-                    df_risk_filtered = apply_column_filters(df_risk_disp, filter_key_prefix="risk")
-
-                    admin_download(
-                        label="📥 Download Risk Classification Results (.xlsx)",
-                        data=to_excel_bytes(df_risk_filtered, sheet_name="CDSCO_Risk"),
-                        file_name=f"CDSCO_Risk_{device_name}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key="dl_cdsco_risk"
-                    )
-
-                    data_table(df_risk_filtered, "research-risk", "CDSCO Risk Classification")
+                    data_table(df_risk_disp, "research-risk", "CDSCO Risk Classification",
+                               description="Indian device risk classifications · 20 results per page")
+                    with st.expander("Source details", key="risk_source_details"):
+                        st.caption(f"{len(risk_matches):,} matching records from {len(df_risk):,} classifications.")
+                        st.caption("Sources: Approved Risk Device List and Class A non-sterile, non-measuring device list.")
+                        if workspace_identity["role"] == "admin":
+                            admin_download("Download all search results (.xlsx)",
+                                data=to_excel_bytes(df_risk_disp, sheet_name="CDSCO_Risk"),
+                                file_name="CDSCO_Risk_Results.xlsx", key="dl_cdsco_risk")
                 else:
                     st.warning(f"No CDSCO classification matches found for '{device_name}'.")
 
 
+        else:
+            st.info("Select a regulatory target that includes CDSCO to search this tab.")
+
     with tab_approved:
         if jurisdiction in ["Dual (US FDA + CDSCO)", "CDSCO India Only"]:
-            # STEP 2: Manufacturers & Importers
-            st.markdown("#### Step 2: Available Manufacturers & Importers")
 
             df_app = approved_payload["data"]
             if not df_app.empty:
@@ -679,12 +379,6 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                 elif cdsco_role == "Importer Only":
                     app_matches = app_matches[app_matches["role"] == "Importer"]
 
-                st.markdown(f"""
-                <div class='results-info'>
-                    📊 Found: <b>{len(app_matches):,} total registrations</b> | Displaying all results below
-                </div>
-                """, unsafe_allow_html=True)
-
                 if not app_matches.empty:
                     disp_cols = ["devicename", "role", "address", "str_licence_no", "classname", "brandname"]
                     df_app_disp = app_matches[[c for c in disp_cols if c in app_matches.columns]].rename(columns={
@@ -696,18 +390,18 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                         "brandname": "Brand Name"
                     })
 
-                    # Apply per-column filters
-                    df_app_filtered = apply_column_filters(df_app_disp, filter_key_prefix="approved")
-
-                    admin_download(
-                        label="📥 Download Approved Devices (.xlsx)",
-                        data=to_excel_bytes(df_app_filtered, sheet_name="Approved_Devices"),
-                        file_name=f"CDSCO_Devices_{device_name}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key="dl_cdsco_app"
-                    )
-
-                    # Display all results with scrolling
-                    data_table(df_app_filtered, "research-approved", "Approved Devices")
+                    data_table(df_app_disp, "research-approved", "Approved Devices",
+                               description="Registered manufacturers and importers · 20 results per page")
+                    with st.expander("Source details", key="approved_source_details"):
+                        st.caption(f"{len(app_matches):,} matching registrations from {len(df_app):,} records.")
+                        st.caption("Source: CDSCO approved device registrations.")
+                        if workspace_identity["role"] == "admin":
+                            admin_download("Download all search results (.xlsx)",
+                                data=to_excel_bytes(df_app_disp, sheet_name="Approved_Devices"),
+                                file_name="CDSCO_Approved_Devices.xlsx", key="dl_cdsco_app")
                 else:
                     st.info(f"No approved devices matched '{device_name}'.")
+        else:
+            st.info("Select a regulatory target that includes CDSCO to search this tab.")
+else:
+    st.info("Enter a device or manufacturer in the sidebar, then select Run search.")

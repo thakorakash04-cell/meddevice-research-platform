@@ -39,4 +39,25 @@ class WorkspaceUITests(unittest.TestCase):
         at.run()
         self.assertTrue(any(t.label=='Username' for t in at.text_input))
 
+    def test_three_tabs_share_clean_result_tables(self):
+        import json
+        from unittest.mock import Mock
+        at=self.signed_in('viewer_user','Test-only-viewer-password!123')
+        response=Mock(status_code=200,content=b'fixture',links={})
+        response.json.return_value={"meta":{"results":{"total":45}},"results":[{
+            "k_number":f"K240{i:03}","device_name":"Laser system", "applicant":"Example manufacturer",
+            "decision_date":"20240101","openfda":{"device_class":["2"]}} for i in range(45)]}
+        with patch('requests.Session.get',return_value=response):
+            next(b for b in at.button if b.label=='Run search').click().run()
+        self.assertEqual(len(at.exception),0)
+        self.assertEqual([t.label for t in at.tabs],['FDA 510(k)','CDSCO Risk Classification','Approved Devices'])
+        grids=at.get('component_instance')
+        self.assertEqual(len(grids),3)
+        args=[json.loads(g.proto.json_args) for g in grids]
+        self.assertEqual(len(args[0]['rows']),45)
+        self.assertTrue(all('20 results per page' in g['description'] for g in args))
+        self.assertEqual(len(at.get('download_button')),0)
+        self.assertFalse(any('Filter Controls' in e.label for e in at.expander))
+        self.assertEqual(sum(e.label=='Source details' for e in at.expander),3)
+
 if __name__=='__main__':unittest.main()
