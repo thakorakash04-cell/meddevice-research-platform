@@ -71,14 +71,22 @@ class WorkspaceUITests(unittest.TestCase):
             with patch('requests.Session.get',return_value=response):
                 next(b for b in at.button if b.label=='Run search').click().run()
             assert not at.exception
-            assert at.chat_input[0].disabled
-            at.checkbox(key='research_ai_consent').set_value(True).run()
+            question=at.text_area(key='research_ai_question')
+            question.set_value('How many loaded FDA records?')
+            with patch('grounded_ai.generate') as blocked:
+                next(b for b in at.button if b.label=='Ask AI').click().run()
+                blocked.assert_not_called()
+            assert any('Tick the sharing checkbox' in e.value for e in at.error)
+            at.checkbox(key='research_ai_consent').set_value(True)
             with patch('grounded_ai.generate',side_effect=[{'queries':[{'table':'T1','metrics':[{'column':'*','op':'count'}]}],'clarification':''},'There are 2 loaded FDA records [Q1].']) as generate:
-                at.chat_input[0].set_value('How many loaded FDA records?').run()
+                next(b for b in at.button if b.label=='Ask AI').click().run()
+                assert at.checkbox(key='research_ai_consent').value is True
                 assert not at.exception
                 assert generate.call_count==2
                 assert generate.call_args.args[3]['evidence'][0]['records']==[{'count(*)':2}]
             assert any('2 loaded FDA records' in m.value for m in at.markdown)
+            at.run()
+            assert at.checkbox(key='research_ai_consent').value is True
             assert any('[Q1]' in e.label for e in at.expander)
             next(b for b in at.button if b.label=='Clear chat').click().run()
             assert not at.session_state['_research_ai_messages']

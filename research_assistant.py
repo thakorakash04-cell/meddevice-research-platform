@@ -17,13 +17,18 @@ def render_research_chat(tables,version,store,actor):
     if not tables:st.info('Run a regulatory search first to load records for Ask AI.');return
     st.caption('Available: '+' · '.join(t['name']+' ('+str(len(t['rows']))+' records)' for t in tables))
     messages=st.session_state.setdefault('_research_ai_messages',[])
-    consent=st.checkbox('Allow sending my questions and relevant loaded records to Google Gemini',key='research_ai_consent',help='This includes table headings, a small sample, selected query results and recent chat. Account credentials and API keys are not included in prompts.')
     if st.button('Clear chat',key='research_ai_clear'):
         messages.clear()
     transcript=st.container()
-    question=st.chat_input('Ask about devices, applicants, classifications or loaded results…',max_chars=2000,disabled=not consent,key='research_ai_question')
-    if question:
-        if not consent:st.error('Enable sharing with Google Gemini before asking.');return
+    # Submit consent and question together. A checkbox change must not depend
+    # on a fragment rerun to enable a second widget with a new identity.
+    with st.form('research_ai_composer',clear_on_submit=False):
+        question=st.text_area('Your question',placeholder='Ask about devices, applicants, classifications or loaded results…',max_chars=2000,key='research_ai_question',height=100)
+        consent=st.checkbox('Allow sending my questions and relevant loaded records to Google Gemini',key='research_ai_consent',help='This includes table headings, a small sample, selected query results and recent chat. Account credentials and API keys are not included in prompts.')
+        submitted=st.form_submit_button('Ask AI',type='primary')
+    if submitted:
+        if not consent:st.error('Tick the sharing checkbox before selecting Ask AI.');return
+        if not question.strip():st.info('Enter a question, then select Ask AI.');return
         try:
             store.require_permission(actor,'use_tools')
             with st.spinner('Checking loaded records…'):
