@@ -20,7 +20,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-from workspace_auth import require_workspace, admin_download
+from workspace_auth import require_workspace, admin_download, can
 from workspace_ui import data_table, workspace_theme
 workspace_theme()
 workspace_store, workspace_actor, workspace_identity = require_workspace()
@@ -240,7 +240,7 @@ with st.sidebar:
     if search_btn:
         st.session_state.search_executed = True
 
-    if workspace_identity["role"] == "admin":
+    if can("download"):
         with st.expander("Database downloads"):
             if os.path.exists(os.path.join(BASE_DIR, "cdsco_combined_risk.xlsx")):
                 with open(os.path.join(BASE_DIR, "cdsco_combined_risk.xlsx"), "rb") as f:
@@ -251,6 +251,10 @@ st.title("MedDevice Research")
 st.caption("Search regulatory records, compare results, and open full-window record details.")
 
 # ─── MAIN UI EXECUTION ────────────────────────────────────────────────────────
+if not can("use_tools"):
+    st.info("Your administrator has disabled research search access for this account.")
+    st.stop()
+
 if st.session_state.search_executed and (device_name.strip() or applicant_name.strip()):
 
     tab_fda, tab_risk, tab_approved = st.tabs([
@@ -285,7 +289,7 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                     st.caption(f"Loaded {len(df_fda_filtered):,} of {fda_res['total']:,} matching records from openFDA.")
                     st.caption("Data fingerprint: " + fda_res["hash"])
                     st.link_button("Open source query", fda_res["url"])
-                    if workspace_identity["role"] == "admin":
+                    if can("download"):
                         admin_download("Download all search results (.xlsx)",
                             data=to_excel_bytes(df_fda_filtered, sheet_name="FDA_510k"),
                             file_name="FDA_510k_Results.xlsx", key="dl_fda")
@@ -344,7 +348,7 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                     with st.expander("Source details", key="risk_source_details"):
                         st.caption(f"{len(risk_matches):,} matching records from {len(df_risk):,} classifications.")
                         st.caption("Sources: Approved Risk Device List and Class A non-sterile, non-measuring device list.")
-                        if workspace_identity["role"] == "admin":
+                        if can("download"):
                             admin_download("Download all search results (.xlsx)",
                                 data=to_excel_bytes(df_risk_disp, sheet_name="CDSCO_Risk"),
                                 file_name="CDSCO_Risk_Results.xlsx", key="dl_cdsco_risk")
@@ -395,7 +399,7 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                     with st.expander("Source details", key="approved_source_details"):
                         st.caption(f"{len(app_matches):,} matching registrations from {len(df_app):,} records.")
                         st.caption("Source: CDSCO approved device registrations.")
-                        if workspace_identity["role"] == "admin":
+                        if can("download"):
                             admin_download("Download all search results (.xlsx)",
                                 data=to_excel_bytes(df_app_disp, sheet_name="Approved_Devices"),
                                 file_name="CDSCO_Approved_Devices.xlsx", key="dl_cdsco_app")

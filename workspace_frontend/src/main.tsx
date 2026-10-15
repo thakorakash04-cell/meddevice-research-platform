@@ -1,11 +1,11 @@
 import React,{useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import DataGrid from './data-grid';
-import {setRole} from './bridge';
+import {setRole,acceptResponse} from './bridge';
 import type {Cell} from './grid-utils';
 import './globals.css';
 import './workspace.css';
-type Args={headers:string[];rows:Cell[][];title:string;description?:string;role:string;storageKey:string};
+type Args={headers:string[];rows:Cell[][];title:string;description?:string;role:string;permissions?:Record<string,boolean>;response?:{id:string;ok:boolean;error?:string};storageKey:string};
 function Workspace({args}:{args:Args}){
  const [selected,setSelected]=useState<Cell[]|null>(null);
  return <div className="workspace-table"><div className="paneltitle"><div><h2>{args.title}</h2><p>{args.description}</p></div><span>Open any record for details</span></div><DataGrid headers={args.headers} rows={args.rows} storageKey={args.storageKey} filename={args.title} onCell={r=>setSelected(r)}/>{selected&&<div className="row-detail" role="dialog" aria-modal="true" aria-label="Full-window record details"><div className="detailtopbar"><button className="secondary" onClick={()=>setSelected(null)}>← Back to table</button><h2>Record details</h2></div><dl>{args.headers.map((h,i)=><div key={h}><dt>{h}</dt><dd>{String(selected[i]??'—').split(/(https?:\/\/[^\s]+)/g).map((s,j)=>/^https?:\/\//.test(s)?<a key={j} href={s} target="_blank" rel="noreferrer">{s}</a>:s)}</dd></div>)}</dl></div>}</div>
@@ -26,7 +26,7 @@ function fit(){
 const observer=new ResizeObserver(()=>requestAnimationFrame(fit));
 observer.observe(document.getElementById('root')!);
 new MutationObserver(()=>requestAnimationFrame(fit)).observe(document.getElementById('root')!,{childList:true,subtree:true,characterData:true});
-window.addEventListener('message',e=>{if(e.source!==window.parent||e.data?.type!=='streamlit:render')return;const args=e.data.args as Args;setRole(args.role);root.render(<Workspace key={args.storageKey} args={args}/>);requestAnimationFrame(fit)});
+window.addEventListener('message',e=>{if(e.source!==window.parent||e.data?.type!=='streamlit:render')return;const args=e.data.args as Args;setRole(args.role,args.permissions);acceptResponse(args.response);root.render(<Workspace key={args.storageKey} args={args}/>);requestAnimationFrame(fit)});
 window.addEventListener('keydown',e=>{if(e.key==='Escape'){const btn=document.querySelector<HTMLButtonElement>('.row-detail .secondary');btn?.click()}});
 window.addEventListener('resize',fit);
 send('streamlit:componentReady',{apiVersion:1});

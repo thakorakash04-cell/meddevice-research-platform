@@ -11,8 +11,23 @@ def data_table(frame, key, title="Data", description=""):
     frame.columns=frame.columns.map(str)
     # pandas encodes dates, NaN and numpy scalars safely for the component protocol.
     rows=json.loads(frame.to_json(orient="values",date_format="iso",default_handler=str))
+    store=st.session_state.get('_account_store');actor=st.session_state.get('actor')
+    response=None
+    event=st.session_state.get(key)
+    if store and actor:
+        store.record_access(actor,title)
+        if isinstance(event,dict) and event.get('action')=='export' and isinstance(event.get('id'),str):
+            handled=st.session_state.setdefault('_handled_exports',{})
+            if event['id'] not in handled:
+                try:store.log_event(actor,'export',title);response={'id':event['id'],'ok':True}
+                except PermissionError:response={'id':event['id'],'ok':False,'error':'Download permission is no longer available.'}
+                handled[event['id']]=response
+                # Keep only the last 30 component acknowledgements.
+                if len(handled)>30:handled.pop(next(iter(handled)))
+            response=handled[event['id']]
     _grid(headers=list(frame.columns),rows=rows,title=title,description=description,
-          role=st.session_state.get("workspace_role","viewer"),storageKey=key,key=key,default=None)
+          role=st.session_state.get("workspace_role","viewer"),permissions=st.session_state.get('workspace_permissions',{}),
+          response=response,storageKey=key,key=key,default=None)
 
 def workspace_theme():
     st.markdown("""<style>

@@ -35,5 +35,14 @@ const rows=()=>Array.from(document.querySelectorAll('tbody tr'));
  // Totals cover all 45 records, not only the visible 20.
  const totalCheck=Array.from(document.querySelectorAll('.gridsettings:nth-of-type(2) .gridsettingspanel label')).find(x=>x.textContent==='Quantity').querySelector('input');
  await click(totalCheck);assert.match(document.querySelector('tfoot').textContent,/1,035/);
+ // A delegated download is visible, but a refused server acknowledgement cannot download.
+ const sent=[];window.parent.postMessage=message=>sent.push(message);
+ global.alert=()=>{};
+ await act(async()=>window.dispatchEvent(new MessageEvent('message',{source:window,data:{type:'streamlit:render',args:{headers:['Device','Quantity','Source'],rows:data,title:'FDA 510(k)',role:'viewer',permissions:{download:true},storageKey:'test-grid'}}})));
+ assert.ok(button('Export filtered CSV'));
+ await click(button('Export filtered CSV'));
+ const request=sent.find(x=>x.value?.action==='export');assert.ok(request);
+ await act(async()=>window.dispatchEvent(new MessageEvent('message',{source:window,data:{type:'streamlit:render',args:{headers:['Device','Quantity','Source'],rows:data,title:'FDA 510(k)',role:'viewer',permissions:{download:false},response:{id:request.value.id,ok:false,error:'Permission revoked'},storageKey:'test-grid'}}})));
+ assert.equal(button('Export filtered CSV'),undefined);
  console.log('Passed: 20/20/5 pagination; next/previous; full-dataset filtering; page reset; row details; fullscreen/Escape; viewer export restrictions; readable source links; all-row totals.');
 })().catch(error=>{console.error(error);process.exitCode=1});
