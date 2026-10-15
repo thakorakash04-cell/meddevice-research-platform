@@ -255,11 +255,11 @@ if not can("use_tools"):
     st.info("Your administrator has disabled research search access for this account.")
     st.stop()
 
+ai_frames=[]
+tab_fda, tab_risk, tab_approved, tab_ai = st.tabs([
+    "FDA 510(k)", "CDSCO Risk Classification", "Approved Devices", "Ask AI"
+])
 if st.session_state.search_executed and (device_name.strip() or applicant_name.strip()):
-
-    tab_fda, tab_risk, tab_approved = st.tabs([
-        "FDA 510(k)", "CDSCO Risk Classification", "Approved Devices"
-    ])
     term = device_name.strip()
     app_term = applicant_name.strip()
 
@@ -283,6 +283,7 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                 df_fda_display = df_fda_filtered.copy()
                 df_fda_display["View PMN"] = df_fda_display["510(k) Number"].map(get_fda_pmn_link)
                 df_fda_display["PDF Summary"] = df_fda_display["510(k) Number"].map(get_fda_pdf_link)
+                ai_frames.append(("FDA 510(k)",df_fda_display))
                 data_table(df_fda_display, "research-fda", "FDA 510(k)",
                            description="US premarket clearances · 20 results per page")
                 with st.expander("Source details", key="fda_source_details"):
@@ -343,6 +344,7 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                         "intended_use": "Intended Use"
                     })
 
+                    ai_frames.append(("CDSCO Risk Classification",df_risk_disp))
                     data_table(df_risk_disp, "research-risk", "CDSCO Risk Classification",
                                description="Indian device risk classifications · 20 results per page")
                     with st.expander("Source details", key="risk_source_details"):
@@ -394,6 +396,7 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                         "brandname": "Brand Name"
                     })
 
+                    ai_frames.append(("Approved Devices",df_app_disp))
                     data_table(df_app_disp, "research-approved", "Approved Devices",
                                description="Registered manufacturers and importers · 20 results per page")
                     with st.expander("Source details", key="approved_source_details"):
@@ -409,3 +412,9 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
             st.info("Select a regulatory target that includes CDSCO to search this tab.")
 else:
     st.info("Enter a device or manufacturer in the sidebar, then select Run search.")
+
+with tab_ai:
+    from research_assistant import render_research_chat
+    from grounded_ai import tables_from_frames,fingerprint
+    ai_tables=tables_from_frames(ai_frames)
+    render_research_chat(ai_tables,fingerprint(ai_tables),workspace_store,workspace_actor)

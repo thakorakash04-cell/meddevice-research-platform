@@ -72,3 +72,7 @@ This app now requires username/password login. Configure Streamlit Secrets and c
 ## Account access controls
 
 See [ACCOUNT_ACCESS.md](ACCOUNT_ACCESS.md) for administrator permissions, persistent access logs and self-service password changes. These controls extend the original viewer-only defaults described above.
+
+## Ask AI
+
+See [ASK_AI.md](ASK_AI.md) for the Gemini Secrets setup, data sharing, query evidence and permissions.
