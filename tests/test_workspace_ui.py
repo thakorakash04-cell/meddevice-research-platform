@@ -85,6 +85,7 @@ class WorkspaceUITests(unittest.TestCase):
                 assert generate.call_count==2
                 assert generate.call_args.args[3]['evidence'][0]['records']==[{'count(*)':2}]
             assert any(m.value=='There are 2 loaded FDA records.' for m in at.markdown)
+            assert at.text_area(key='research_ai_question').value==''
             at.run()
             assert at.checkbox(key='research_ai_consent').value is True
             assert any('[Q1]' in e.label for e in at.expander)
@@ -98,11 +99,18 @@ class WorkspaceUITests(unittest.TestCase):
             assert any(e.label.startswith('PDF source: K240001') for e in at.expander)
             assert any(s.label=='Review extracted page' for s in at.selectbox)
             assert any('Intended use: soft tissue cutting' in t.value for t in at.text)
+            assert at.text_area(key='research_ai_question').value==''
+            at.text_area(key='research_ai_question').set_value('Extract intended use from the K240001 summary PDF.')
             with patch('fda_pdf.fetch_fda_summary',return_value=document),patch('grounded_ai.generate',side_effect=[plan,'The summary describes soft tissue cutting.']):
                 next(b for b in at.button if b.label=='Ask AI').click().run()
                 assert not at.exception
             assert sum(e.label.startswith('PDF source: K240001') for e in at.expander)==2
 
+            at.text_area(key='research_ai_question').set_value('Keep this question if the provider fails.')
+            with patch('grounded_ai.generate',side_effect=ValueError('Quota reached')):
+                next(b for b in at.button if b.label=='Ask AI').click().run()
+                assert not at.exception
+                assert at.text_area(key='research_ai_question').value=='Keep this question if the provider fails.'
             next(b for b in at.button if b.label=='Clear chat').click().run()
             assert not at.session_state['_research_ai_messages']
 

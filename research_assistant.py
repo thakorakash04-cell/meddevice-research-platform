@@ -5,10 +5,19 @@ import streamlit as st
 from grounded_ai import ask,settings,clean_answer
 from fda_pdf import extract_pdf,collect_pdf_evidence
 
+def queue_research_question():
+    # Form callbacks run before widget rendering, allowing a successful answer
+    # to reset only the question without clearing consent or triggering reruns.
+    st.session_state['_research_ai_pending']={
+        'question':st.session_state.get('research_ai_question',''),
+        'consent':st.session_state.get('research_ai_consent',False),
+    }
+
 @st.fragment
 def render_research_chat(tables,version,store,actor):
     try:store.require_permission(actor,'use_tools')
     except PermissionError:st.warning('Your research-tool access is no longer active. Sign in again or contact the administrator.');return
+    pending=st.session_state.pop('_research_ai_pending',None)
     st.subheader('Ask AI')
     st.caption('Ask questions about the results loaded in the three research tabs. Answers use this search snapshot, not a complete registry. Requested FDA PDF summaries can be read; no general web search is performed. Verify AI explanations against the source results.')
     if st.session_state.get('_research_ai_version')!=version:
@@ -42,15 +51,10 @@ def render_research_chat(tables,version,store,actor):
     if st.button('Clear chat',key='research_ai_clear'):
         messages.clear()
     transcript=st.container()
-    # Submit consent and question together. A checkbox change must not depend
-    # on a fragment rerun to enable a second widget with a new identity.
-    with st.form('research_ai_composer',clear_on_submit=False):
-        question=st.text_area('Your question',placeholder='Ask about devices, applicants, classifications or loaded results…',max_chars=2000,key='research_ai_question',height=100)
-        consent=st.checkbox('Allow sending my questions and relevant loaded records to Google Gemini',key='research_ai_consent',help='This includes table headings, a small sample, query results, recent chat, and extracted PDF text when you request document research. Account credentials and API keys are not included in prompts.')
-        submitted=st.form_submit_button('Ask AI',type='primary')
-    if submitted:
-        if not consent:st.error('Tick the sharing checkbox before selecting Ask AI.');return
-        if not question.strip():st.info('Enter a question, then select Ask AI.');return
+    if pending and not pending['consent']:st.error('Tick the sharing checkbox before selecting Ask AI.')
+    elif pending and not pending['question'].strip():st.info('Enter a question, then select Ask AI.')
+    if pending and pending['consent'] and pending['question'].strip():
+        question=pending['question']
         try:
             store.require_permission(actor,'use_tools')
             with st.spinner('Checking loaded records…'):
@@ -59,8 +63,15 @@ def render_research_chat(tables,version,store,actor):
             store.log_event(actor,'tool_use','Ask AI')
             messages.extend([{'role':'user','text':question},{'role':'assistant','text':clean_answer(result['answer']),'evidence':result['evidence'],'pdf_documents':result.get('pdf_documents',[])}])
             messages[:]=messages[-12:]
+            st.session_state['research_ai_question']=''
         except ValueError as exc:st.error(str(exc))
         except PermissionError:st.error('Your research-tool access changed. Sign in again before asking another question.');return
+    # Submit consent and question together. A checkbox change must not depend
+    # on a fragment rerun to enable a second widget with a new identity.
+    with st.form('research_ai_composer',clear_on_submit=False):
+        question=st.text_area('Your question',placeholder='Ask about devices, applicants, classifications or loaded results…',max_chars=2000,key='research_ai_question',height=100)
+        consent=st.checkbox('Allow sending my questions and relevant loaded records to Google Gemini',key='research_ai_consent',help='This includes table headings, a small sample, query results, recent chat, and extracted PDF text when you request document research. Account credentials and API keys are not included in prompts.')
+        st.form_submit_button('Ask AI',type='primary',on_click=queue_research_question)
     with transcript:
         for message_index,message in enumerate(messages):
             with st.chat_message(message['role']):
