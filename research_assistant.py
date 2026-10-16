@@ -1,9 +1,10 @@
 """Session-private chat over the current research results, isolated from search reruns."""
-import hashlib
+import copy,hashlib
 import pandas as pd
 import streamlit as st
 from grounded_ai import ask,settings,clean_answer
 from fda_pdf import extract_pdf,collect_pdf_evidence
+from research_exports import build_research_export
 
 def queue_research_question():
     # Form callbacks run before widget rendering, allowing a successful answer
@@ -68,8 +69,8 @@ def render_research_chat(tables,version,store,actor):
         except PermissionError:st.error('Your research-tool access changed. Sign in again before asking another question.');return
     # Submit consent and question together. A checkbox change must not depend
     # on a fragment rerun to enable a second widget with a new identity.
-    with st.form('research_ai_composer',clear_on_submit=False):
-        question=st.text_area('Your question',placeholder='Ask about devices, applicants, classifications or loaded results…',max_chars=2000,key='research_ai_question',height=100)
+    with st.form('research_ai_composer',clear_on_submit=False,enter_to_submit=True):
+        question=st.text_input('Your question',placeholder='Ask about devices, applicants, classifications or loaded results…',max_chars=2000,key='research_ai_question',help='Press Enter to submit, or select Ask AI.')
         consent=st.checkbox('Allow sending my questions and relevant loaded records to Google Gemini',key='research_ai_consent',help='This includes table headings, a small sample, query results, recent chat, and extracted PDF text when you request document research. Account credentials and API keys are not included in prompts.')
         st.form_submit_button('Ask AI',type='primary',on_click=queue_research_question)
     with transcript:
@@ -81,6 +82,15 @@ def render_research_chat(tables,version,store,actor):
                         st.caption('Showing '+str(item['shown_rows'])+' of '+str(item['result_rows'])+' result rows. Calculations use all matching records. Row references are positions within this loaded snapshot.')
                         st.json(item['query'],expanded=False)
                         st.dataframe(pd.DataFrame(item['records']),hide_index=True,width='stretch')
+                        if store.identity(actor)['role']=='admin':
+                            query=copy.deepcopy(item['query'])
+                            st.download_button('Download all matching records (Excel)',
+                                data=lambda query=query:build_research_export(store,actor,tables,query),
+                                file_name='Ask_AI_research_matching_records.xlsx',
+                                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                key='research_ai_export_'+str(message_index)+'_'+item['citation']+'_'+version[:10],
+                                on_click='ignore',help='Full result table and underlying matching records, not just the 20-row preview. Administrator access is checked again when the file is requested.')
+
                 for index,document in enumerate(message.get('pdf_documents',[])):
                     with st.expander('PDF source: '+document['name']+' · '+document['status']):
                         if document.get('url'):st.link_button('Open FDA summary PDF',document['url'])

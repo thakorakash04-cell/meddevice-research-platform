@@ -71,7 +71,7 @@ class WorkspaceUITests(unittest.TestCase):
             with patch('requests.Session.get',return_value=response):
                 next(b for b in at.button if b.label=='Run search').click().run()
             assert not at.exception
-            question=at.text_area(key='research_ai_question')
+            question=at.text_input(key='research_ai_question')
             question.set_value('How many loaded FDA records?')
             with patch('grounded_ai.generate') as blocked:
                 next(b for b in at.button if b.label=='Ask AI').click().run()
@@ -85,11 +85,11 @@ class WorkspaceUITests(unittest.TestCase):
                 assert generate.call_count==2
                 assert generate.call_args.args[3]['evidence'][0]['records']==[{'count(*)':2}]
             assert any(m.value=='There are 2 loaded FDA records.' for m in at.markdown)
-            assert at.text_area(key='research_ai_question').value==''
+            assert at.text_input(key='research_ai_question').value==''
             at.run()
             assert at.checkbox(key='research_ai_consent').value is True
             assert any('[Q1]' in e.label for e in at.expander)
-            at.text_area(key='research_ai_question').set_value('Extract intended use from the K240001 summary PDF.')
+            at.text_input(key='research_ai_question').set_value('Extract intended use from the K240001 summary PDF.')
             document={'name':'K240001 FDA summary','k_number':'K240001','url':'https://www.accessdata.fda.gov/cdrh_docs/pdf24/K240001.pdf','status':'read','sha256':'a'*64,'total_pages':1,'read_pages':1,'warnings':[],'pages':[{'page':1,'text':'Intended use: soft tissue cutting. Bench testing: optical output.'}]}
             plan={'queries':[{'table':'T1','filters':[{'column':'510(k) Number','op':'eq','value':'K240001'}]}],'read_fda_pdfs':True}
             with patch('fda_pdf.fetch_fda_summary',return_value=document) as fetch,patch('grounded_ai.generate',side_effect=[plan,'The summary describes soft tissue cutting.']):
@@ -99,19 +99,38 @@ class WorkspaceUITests(unittest.TestCase):
             assert any(e.label.startswith('PDF source: K240001') for e in at.expander)
             assert any(s.label=='Review extracted page' for s in at.selectbox)
             assert any('Intended use: soft tissue cutting' in t.value for t in at.text)
-            assert at.text_area(key='research_ai_question').value==''
-            at.text_area(key='research_ai_question').set_value('Extract intended use from the K240001 summary PDF.')
+            assert at.text_input(key='research_ai_question').value==''
+            at.text_input(key='research_ai_question').set_value('Extract intended use from the K240001 summary PDF.')
             with patch('fda_pdf.fetch_fda_summary',return_value=document),patch('grounded_ai.generate',side_effect=[plan,'The summary describes soft tissue cutting.']):
                 next(b for b in at.button if b.label=='Ask AI').click().run()
                 assert not at.exception
             assert sum(e.label.startswith('PDF source: K240001') for e in at.expander)==2
 
-            at.text_area(key='research_ai_question').set_value('Keep this question if the provider fails.')
+            at.text_input(key='research_ai_question').set_value('Keep this question if the provider fails.')
             with patch('grounded_ai.generate',side_effect=ValueError('Quota reached')):
                 next(b for b in at.button if b.label=='Ask AI').click().run()
                 assert not at.exception
-                assert at.text_area(key='research_ai_question').value=='Keep this question if the provider fails.'
+                assert at.text_input(key='research_ai_question').value=='Keep this question if the provider fails.'
             next(b for b in at.button if b.label=='Clear chat').click().run()
             assert not at.session_state['_research_ai_messages']
+
+    def test_admin_ai_answer_offers_deferred_excel_download(self):
+        from unittest.mock import Mock
+        with patch.dict(os.environ,{'GEMINI_API_KEY':'test-private-key'}):
+            at=self.signed_in('admin_user','Test-only-admin-password!123')
+            response=Mock(status_code=200,content=b'fixture',links={})
+            response.json.return_value={"meta":{"results":{"total":1}},"results":[{"k_number":"K240001","device_name":"Laser","applicant":"Example"}]}
+            with patch('requests.Session.get',return_value=response):
+                next(b for b in at.button if b.label=='Run search').click().run()
+            assert not at.exception
+            assert not any(t.key=='research_ai_question' for t in at.text_area)
+            at.text_input(key='research_ai_question').set_value('Show loaded FDA records')
+            at.checkbox(key='research_ai_consent').set_value(True)
+            with patch('grounded_ai.generate',side_effect=[{'queries':[{'table':'T1'}]},'One loaded FDA record.']),patch('research_assistant.build_research_export') as export:
+                next(b for b in at.button if b.label=='Ask AI').click().run()
+                assert not at.exception
+                export.assert_not_called()
+            assert at.text_input(key='research_ai_question').value==''
+            assert any(b.label=='Download all matching records (Excel)' for b in at.get('download_button'))
 
 if __name__=='__main__':unittest.main()
