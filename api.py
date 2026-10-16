@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field, ValidationError
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from research_engine import robust_dataframe_search, get_fda_pmn_link
+from research_engine import robust_dataframe_search, get_fda_pmn_link, company_name_search
 from full_results import router as results_router, save_results, get_job, add_rows, rows_page, finish
 
 app = FastAPI(title="MedDevice Cliq Bot", docs_url=None, redoc_url=None)
@@ -140,7 +140,7 @@ def filter_cdsco_batch(df, command, query, applicant):
         if "role" not in df.columns:
             raise HTTPException(503, "CDSCO role column unavailable")
         role = "Manufacturer" if command == "manufacturer" else "Importer"
-        df = df[df["role"].astype(str).str.casefold() == role.casefold()]
+        df = df[df["role"].fillna('').astype(str).str.strip().str.casefold() == role.casefold()]
         columns = ["devicename", "brandname", "modelname", "str_intended_use"]
         fields = [("Device", "devicename"), ("Company / address", "address"), ("Licence", "str_licence_no"), ("Class", "classname"), ("Brand", "brandname")]
     columns = [column for column in columns if column in df.columns]
@@ -150,10 +150,9 @@ def filter_cdsco_batch(df, command, query, applicant):
     if applicant:
         if command == "risk":
             raise HTTPException(400, "Risk classification records do not contain company names.")
-        company_columns = [c for c in ("address", "premises_add") if c in matches.columns]
-        if not company_columns:
-            raise HTTPException(503, "CDSCO company columns unavailable")
-        matches = robust_dataframe_search(matches, applicant, company_columns, ai_mode=False)
+        if 'address' not in matches.columns:
+            raise HTTPException(503, "CDSCO company column unavailable")
+        matches = company_name_search(matches,applicant)
     return matches, fields
 
 

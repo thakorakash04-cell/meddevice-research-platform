@@ -76,3 +76,7 @@ See [ACCOUNT_ACCESS.md](ACCOUNT_ACCESS.md) for administrator permissions, persis
 ## Ask AI
 
 See [ASK_AI.md](ASK_AI.md) for the Gemini Secrets setup, data sharing, query evidence and permissions.
+
+## Search filters
+
+Manufacturer / Importer is a literal, case-insensitive company/address constraint for Approved Devices, applied independently of the product filter. Company Name Only uses that company input (or the product box as a fallback), without product synonyms. Manufacturer/Importer role filters remain cumulative. FDA searches honor exact-phrase, all-word and any-word modes when Smart search is off. CDSCO risk lists have no company field, so company-only searches show an explanation there rather than unrelated classifications. Loaded Ask AI tables and downloads use the displayed filtered result snapshot.

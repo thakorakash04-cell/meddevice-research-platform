@@ -133,4 +133,33 @@ class WorkspaceUITests(unittest.TestCase):
             assert at.text_input(key='research_ai_question').value==''
             assert any(b.label=='Download all matching records (Excel)' for b in at.get('download_button'))
 
+    def test_company_only_search_filters_approved_devices_by_manufacturer(self):
+        import json
+        import pandas as pd
+        import streamlit as st
+        from unittest.mock import Mock
+        from test_company_search import FRAME
+        at=self.signed_in('viewer_user','Test-only-viewer-password!123')
+        next(t for t in at.text_input if t.label=='Manufacturer / Importer').set_value('meril')
+        next(s for s in at.selectbox if s.label=='Search Field Scope').set_value('Company Name Only')
+        response=Mock(status_code=200,content=b'fixture',links={})
+        response.json.return_value={"meta":{"results":{"total":1}},"results":[{"k_number":"K240001","device_name":"Stent","applicant":"Meril Life Sciences"}]}
+        risk=pd.DataFrame([{'medical_device_name':'Laser','device_category':'General Hospital','risk_classification_under_mdr_2017':'B','intended_use':'Example'}])
+        def read(path):return FRAME.copy() if 'approved' in str(path) else risk.copy()
+        st.cache_data.clear()
+        with patch('pandas.read_parquet',side_effect=read),patch('requests.Session.get',return_value=response) as get,patch('research_assistant.render_research_chat') as chat:
+            next(b for b in at.button if b.label=='Run search').click().run()
+        assert not at.exception
+        grids=[json.loads(g.proto.json_args) for g in at.get('component_instance')]
+        approved=next(g for g in grids if g['title']=='Approved Devices')
+        col=approved['headers'].index('Company Name & Address')
+        assert len(approved['rows'])==2
+        assert all('meril' in row[col].lower() for row in approved['rows'])
+        ai_table=next(t for t in chat.call_args.args[0] if t['name']=='Approved Devices')
+        assert ai_table['rows']==approved['rows']
+        assert any('do not contain company names' in info.value for info in at.info)
+        from urllib.parse import urlsplit,parse_qs
+        request=parse_qs(urlsplit(get.call_args.args[0]).query)['search'][0]
+        assert 'applicant' in request and 'meril' in request.lower() and 'device_name' not in request
+
 if __name__=='__main__':unittest.main()

@@ -31,7 +31,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if 'search_executed' not in st.session_state:
     st.session_state.search_executed = False
 
-from research_engine import sha256, get_fda_pmn_link, get_fda_pdf_link, expand_terms, robust_dataframe_search
+from research_engine import sha256, get_fda_pmn_link, get_fda_pdf_link, expand_terms, robust_dataframe_search, search_approved_devices, build_fda_query
 
 def to_excel_bytes(df, sheet_name="Results"):
     output = io.BytesIO()
@@ -96,32 +96,8 @@ def get_cdsco_sync_metadata():
 sync_meta = get_cdsco_sync_metadata()
 
 @st.cache_data(ttl=900, show_spinner=False)
-def search_us_fda(device_query: str, applicant: str, ai_mode=True):
-    search_parts = []
-    if device_query.strip():
-        dev_clean = device_query.strip()
-        words = re.findall(r'\w+', dev_clean)
-        if ai_mode:
-            terms = expand_terms(dev_clean, enable_synonyms=True)
-            term_str = " OR ".join([f'"{t}"' for t in terms])
-            search_parts.append(f"device_name:({term_str})")
-        else:
-            if len(words) > 1:
-                dev_subparts = [f'device_name:"{w}"' for w in words]
-                search_parts.append(f"({' AND '.join(dev_subparts)})")
-            else:
-                search_parts.append(f'device_name:"{dev_clean}"')
-
-    if applicant.strip():
-        app_clean = applicant.strip()
-        app_words = re.findall(r'\w+', app_clean)
-        if len(app_words) > 1:
-            app_subparts = [f'applicant:"{w}"' for w in app_words]
-            search_parts.append(f"({' AND '.join(app_subparts)})")
-        else:
-            search_parts.append(f'applicant:"{app_clean}"')
-
-    raw_query = " AND ".join(search_parts)
+def search_us_fda(device_query: str, applicant: str, ai_mode=True,match_mode='all_words'):
+    raw_query=build_fda_query(device_query,applicant,ai_mode=ai_mode,match_mode=match_mode)
     url = f"https://api.fda.gov/device/510k.json?search={quote(raw_query)}&limit=1000&sort=decision_date:asc"
     results = []
     total = 0
@@ -233,7 +209,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("**CDSCO Filters**")
     cdsco_role = st.selectbox("Applicant Role Filter", ["Both (Manufacturer + Importer)", "Manufacturer Only", "Importer Only"])
-    selected_categories = st.multiselect("Device Categories Filter", all_categories, default=all_categories)
+    selected_categories = st.multiselect("Device Categories Filter", all_categories, default=all_categories,help="Leave empty to include all categories.")
 
     search_btn = st.button("Run search", type="primary", use_container_width=True)
 
@@ -266,7 +242,8 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
     with tab_fda:
         if jurisdiction in ["Dual (US FDA + CDSCO)", "US FDA Only"]:
             with st.spinner("Loading all matching FDA 510(k) records..."):
-                fda_res = search_us_fda(device_name, applicant_name, ai_mode=ai_search_toggle)
+                fda_res = search_us_fda('' if search_scope=='Company Name Only' else device_name,
+                                        (app_term or term) if search_scope=='Company Name Only' else applicant_name, ai_mode=ai_search_toggle,match_mode=selected_mode)
 
             if fda_res.get("status") == "success" and fda_res["results"]:
                 df_fda_filter = pd.DataFrame([{
@@ -305,14 +282,15 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
             st.info("Select a regulatory target that includes US FDA to search this tab.")
 
     with tab_risk:
-        if jurisdiction in ["Dual (US FDA + CDSCO)", "CDSCO India Only"]:
+        if jurisdiction in ["Dual (US FDA + CDSCO)", "CDSCO India Only"] and (search_scope=="Company Name Only" or (not term and app_term)):
+            st.info("CDSCO risk classifications do not contain company names. Company-only results are available in FDA 510(k) and Approved Devices. Use a product search for risk classification.")
+        elif jurisdiction in ["Dual (US FDA + CDSCO)", "CDSCO India Only"]:
 
+            if app_term:st.caption("Risk classifications are filtered by product; the company filter applies to FDA 510(k) and Approved Devices only.")
             df_risk = risk_payload["data"]
             if not df_risk.empty:
                 if search_scope == "Product Name Only":
                     risk_cols = ["medical_device_name"]
-                elif search_scope == "Company Name Only":
-                    risk_cols = ["device_category"]
                 else:
                     risk_cols = ["medical_device_name", "intended_use", "device_category"]
 
@@ -366,24 +344,10 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
 
             df_app = approved_payload["data"]
             if not df_app.empty:
-                if search_scope == "Product Name Only":
-                    app_cols = ["devicename", "brandname", "modelname"]
-                elif search_scope == "Company Name Only":
-                    app_cols = ["address", "premises_add"]
-                else:
-                    app_cols = ["devicename", "brandname", "modelname", "str_intended_use", "address"]
-
-                if term:
-                    app_matches = robust_dataframe_search(
-                        df_app, term, app_cols, ai_mode=ai_search_toggle, match_mode=selected_mode
-                    )
-                else:
-                    app_matches = df_app.copy()
-
-                if cdsco_role == "Manufacturer Only":
-                    app_matches = app_matches[app_matches["role"] == "Manufacturer"]
-                elif cdsco_role == "Importer Only":
-                    app_matches = app_matches[app_matches["role"] == "Importer"]
+                app_matches=search_approved_devices(
+                    df_app,term,app_term,search_scope,
+                    ai_mode=ai_search_toggle,match_mode=selected_mode,role=cdsco_role
+                )
 
                 if not app_matches.empty:
                     disp_cols = ["devicename", "role", "address", "str_licence_no", "classname", "brandname"]
@@ -407,7 +371,7 @@ if st.session_state.search_executed and (device_name.strip() or applicant_name.s
                                 data=to_excel_bytes(df_app_disp, sheet_name="Approved_Devices"),
                                 file_name="CDSCO_Approved_Devices.xlsx", key="dl_cdsco_app")
                 else:
-                    st.info(f"No approved devices matched '{device_name}'.")
+                    st.info("No approved devices matched the selected product and company filters.")
         else:
             st.info("Select a regulatory target that includes CDSCO to search this tab.")
 else:
