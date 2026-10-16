@@ -14,7 +14,7 @@ import io
 urllib3.disable_warnings()
 
 st.set_page_config(
-    page_title="MedDevice Research Platform",
+    page_title="Regulatory Framework",
     layout="wide",
     page_icon="⚕️",
     initial_sidebar_state="expanded"
@@ -247,7 +247,7 @@ with st.sidebar:
                     admin_download("CDSCO Risk List (.xlsx)", data=f, file_name="cdsco_combined_risk.xlsx",
                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-st.title("MedDevice Research")
+st.title("Regulatory Framework")
 st.caption("Search regulatory records, compare results, and open full-window record details.")
 
 # ─── MAIN UI EXECUTION ────────────────────────────────────────────────────────

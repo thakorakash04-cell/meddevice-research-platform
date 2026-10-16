@@ -5,7 +5,7 @@ import pandas as pd
 import streamlit as st
 from .store import Store,AccessDenied
 
-APP_TITLE='MedDevice Research Platform'
+APP_TITLE='Regulatory Framework'
 PERMISSION_LABELS={'download': 'Download / export results', 'use_tools': 'Run research searches'}
 @st.cache_resource
 def initialize(url,username,password):
